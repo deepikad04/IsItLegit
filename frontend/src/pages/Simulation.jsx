@@ -903,6 +903,53 @@ export default function Simulation() {
             </div>
           </div>
 
+          {/* Position Summary */}
+          {(Object.keys(portfolio.holdings || {}).length > 0 || decisionHistory.some(d => d.type === 'buy' || d.type === 'sell')) && (
+            <div className="mb-4 p-3.5 bg-gray-50 rounded-xl border border-gray-200">
+              {(() => {
+                const totalBought = decisionHistory.filter(d => d.type === 'buy').reduce((sum, d) => sum + (d.amount || 0), 0);
+                const totalSold = decisionHistory.filter(d => d.type === 'sell').reduce((sum, d) => sum + (d.amount || 0), 0);
+                const tradeCount = decisionHistory.filter(d => d.type === 'buy' || d.type === 'sell').length;
+                const holdingsEntries = Object.entries(portfolio.holdings || {});
+                return (
+                  <div className="flex items-center justify-between flex-wrap gap-3">
+                    <div className="flex items-center gap-5 flex-wrap">
+                      {holdingsEntries.length > 0 && holdingsEntries.map(([asset, qty]) => (
+                        <div key={asset}>
+                          <p className="text-xs font-bold text-gray-400 uppercase">Position</p>
+                          <p className="text-base font-black text-gray-900">{qty} {asset}</p>
+                        </div>
+                      ))}
+                      {holdingsEntries.length > 0 && (
+                        <div>
+                          <p className="text-xs font-bold text-gray-400 uppercase">Value</p>
+                          <p className="text-base font-black text-gray-900">
+                            ${holdingsEntries.reduce((sum, [, qty]) => sum + qty * state.current_price, 0).toFixed(2)}
+                          </p>
+                        </div>
+                      )}
+                      <div>
+                        <p className="text-xs font-bold text-gray-400 uppercase">Total Bought</p>
+                        <p className="text-base font-black text-emerald-700">${totalBought.toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-gray-400 uppercase">Total Sold</p>
+                        <p className="text-base font-black text-red-700">${totalSold.toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-gray-400 uppercase">Trades</p>
+                        <p className="text-base font-black text-gray-900">{tradeCount}</p>
+                      </div>
+                    </div>
+                    <button onClick={() => setShowHistory(true)} className="text-xs font-bold text-brand-navy hover:text-brand-navy-light flex items-center gap-1">
+                      <Eye className="h-3.5 w-3.5" /> View All Moves
+                    </button>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
           <div className="h-48 sm:h-72">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={chartData}>

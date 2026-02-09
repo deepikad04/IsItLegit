@@ -93,24 +93,27 @@ IsItLegit is the first platform that:
 
 > Note: The backend is hosted on Render's free tier, so the first request may take ~30s to cold-start. After that, everything is fast.
 
+> **Gemini API auto-fallback:** This app uses the Gemini free tier. If the daily quota is exhausted, the backend automatically detects the 429 error and switches to deterministic heuristic fallbacks for 5 minutes before retrying Gemini. The app remains fully functional either way — AI-generated analysis is richer, but heuristic results still demonstrate the full data pipeline and all UI features. You will never see an error page due to quota limits.
+
 ### Pre-seeded Demo Accounts
 
 Two accounts are pre-loaded with raw behavioral data (decisions, rationales, outcomes). AI analysis is generated on-demand by Gemini when you view the reflection page — demonstrating the data-to-insight pipeline live:
 
 | Account | Email | Password | What to See |
 |---------|-------|----------|-------------|
-| **demo_trader** | `demo@isitlegit.com` | `demo1234` | 20 completed simulations, full progress chart, behavior profile with bias patterns, community stats, all reflection tabs |
+| **demo_trader** | `demo@isitlegit.com` | `demo1234` | 19 completed simulations, full progress chart, impact metrics, behavior profile with bias patterns, all reflection tabs |
 | **alex_novice** | `alex@isitlegit.com` | `alex1234` | 12 simulations, beginner-level profile, improvement trajectory |
 
 ### Suggested Walkthrough (5 min)
 
 1. **Log in** with `demo@isitlegit.com` / `demo1234`
-2. **Dashboard** — see progress chart, community insights (aggregate stats, score distribution), recommended scenario, and AI Challenge card
-3. **Click any completed simulation** under "Recent Simulations" to view the **Reflection page**
+2. **Dashboard** — see progress chart, impact metrics (process quality trend), quick links, and recent simulations
+3. **Scenarios page** — browse all scenarios with category/difficulty filters, see AI Challenge and recommended scenario cards
+4. **Click any completed simulation** under "Recent Simulations" to view the **Reflection page**
    - Try each tab: Bias Analysis, Counterfactuals ("what if?"), Why Decisions, Pro Comparison, Coaching
    - These are all powered by Gemini with structured JSON output
 4. **View Full Profile** — see bias patterns, strengths/weaknesses, improvement trajectory
-5. **Start a new simulation** — pick any scenario (try "The Perfect Storm" for all 14 market features)
+5. **Start a new simulation** — go to Scenarios and pick any scenario (try "The Perfect Storm" for all 14 market features)
    - Read the **briefing screen** showing active market features
    - Click "Begin Simulation" and trade for 30-60 seconds
    - Notice: real-time price chart, news with source attribution, social feed with avatars, live bias detector alerts
@@ -253,7 +256,7 @@ This project uses **6 distinct Gemini API capabilities** — not just chat compl
 | Feature | How It's Used | Call Types |
 |---------|---------------|------------|
 | **Structured Output** | Every Gemini response is schema-validated via Pydantic before reaching clients. No raw text — all structured JSON. | All 15+ call types |
-| **Thinking Levels** | `low` for real-time nudges/coaching (latency-sensitive), `high` for deep counterfactual analysis and adaptive scenario generation | Configured per call type in `THINKING_LEVELS` dict |
+| **Thinking** | Extended thinking enabled for all calls — Gemini uses internal reasoning before producing structured output | `include_thoughts=True` on all calls |
 | **Context Caching** | Shared scenario+decision prefix cached across related calls (reflection, counterfactuals, coaching) to reduce token costs and latency | `_get_or_create_context_cache()` — 7 call types share cached prefix |
 | **Search Grounding** | `GoogleSearch` tool verifies claim credibility with real web data. Extracts `groundingChunks` (source URIs), `groundingSupports` (citation segments), `web_search_queries` | `verify_claim_credibility()` |
 | **URL Context** | `UrlContext` tool reads article URLs to generate custom scenarios from real financial news. Extracts `url_context_metadata` with retrieval statuses | `generate_scenario_from_url()` |
@@ -261,30 +264,30 @@ This project uses **6 distinct Gemini API capabilities** — not just chat compl
 
 ### All 18+ Gemini Call Types
 
-| Endpoint | Call Type | Thinking | What It Does |
-|----------|-----------|----------|--------------|
-| SSE stream | `nudge` | low | Real-time coaching nudge during simulation |
-| SSE stream | `challenge` | low | "Challenge my reasoning" — scores rationale live |
-| POST complete | `reflection` | low | Full post-sim bias analysis |
-| POST complete | `counterfactuals` | high | "What if you sold 30s earlier?" alternate timelines |
-| GET /why | `why` | low | "Why did I do that?" — behavioral psychology explainer |
-| GET /pro-comparison | `pro` | high | Side-by-side expert vs your decisions |
-| GET /coaching | `coaching` | low | Personalized tips + behavior profile update |
-| GET /bias-heatmap | `bias_heatmap` | low | Time-series bias intensity data for heatmap |
-| GET /rationale-review | `rationale_review` | low | Reviews quality of user's stated reasoning |
-| POST generate | `adaptive_scenario` | high | AI generates scenario targeting your weaknesses |
-| POST /verify-credibility | grounding | low | Fact-checks a claim against real web sources |
-| POST /generate-from-url | url_context | high | Creates scenario from a news article URL |
-| Profile update | `profile_update` | low | Updates persistent behavior profile |
-| GET /bias-classifier | `bias_classifier` | high | AI classifies biases from qualitative trace + quantitative features |
-| GET /confidence-calibration | `confidence_calibration` | high | AI self-evaluates pattern detections against evidence |
-| GET /behavior-history | `behavior_history` | high | Longitudinal analysis of user's full simulation history |
-| Batch analysis | `batch` | high | Multi-simulation pattern analysis |
-| Isolation | `isolate` | high | Single-bias deep dive |
+| Endpoint | Call Type | What It Does |
+|----------|-----------|--------------|
+| SSE stream | `nudge` | Real-time coaching nudge during simulation |
+| SSE stream | `challenge` | "Challenge my reasoning" — scores rationale live |
+| POST complete | `reflection` | Full post-sim bias analysis |
+| POST complete | `counterfactuals` | "What if you sold 30s earlier?" alternate timelines |
+| GET /why | `why` | "Why did I do that?" — behavioral psychology explainer |
+| GET /pro-comparison | `pro` | Side-by-side expert vs your decisions |
+| GET /coaching | `coaching` | Personalized tips + behavior profile update |
+| GET /bias-heatmap | `bias_heatmap` | Time-series bias intensity data for heatmap |
+| GET /rationale-review | `rationale_review` | Reviews quality of user's stated reasoning |
+| POST generate | `adaptive_scenario` | AI generates scenario targeting your weaknesses |
+| POST /verify-credibility | grounding | Fact-checks a claim against real web sources |
+| POST /generate-from-url | url_context | Creates scenario from a news article URL |
+| Profile update | `profile_update` | Updates persistent behavior profile |
+| GET /bias-classifier | `bias_classifier` | AI classifies biases from qualitative trace + quantitative features |
+| GET /confidence-calibration | `confidence_calibration` | AI self-evaluates pattern detections against evidence |
+| GET /behavior-history | `behavior_history` | Longitudinal analysis of user's full simulation history |
+| Batch analysis | `batch` | Multi-simulation pattern analysis |
+| Isolation | `isolate` | Single-bias deep dive |
 
 ---
 
-## 14 Market Realism Features
+## Market Realism Features
 
 The simulation engine (`simulation_engine.py`, 1070+ lines) implements these features progressively — easier scenarios use 2-3, the hardest ("The Perfect Storm") uses all 14:
 
@@ -330,9 +333,13 @@ Gemini acts as the **reasoning layer** that discovers patterns from raw behavior
 - **URL-based scenarios** — paste a news article URL and Gemini creates a scenario from it
 
 ### Frontend
+- **Collapsible sidebar navigation** — desktop sidebar collapses to icon-only mode; mobile uses slide-down menu
+- **Dedicated Scenarios page** — browse, filter by category/difficulty, see recommended and AI Challenge cards
+- **Dashboard with impact metrics** — process quality trend, quick links, progress gated on minimum simulations
 - **Briefing screen** before each simulation showing active market features
 - **Enhanced news panel** with source attribution (Reuters, Bloomberg), "BREAKING" tags, and relative timestamps
 - **Social media feed** with fake usernames, avatars, engagement metrics, and platform icons
+- **Share results card** — save reflection results as image or copy as text
 - **Bias heatmap**, calibration charts, and outcome distribution visualizations
 - **Learning module** with bite-sized cards on cognitive biases
 
@@ -454,7 +461,7 @@ IsItLegit/
 │   ├── seed_demo.py          # Seeds demo users with raw behavioral data
 │   └── seed_analysis.py      # Runs Gemini on seeded data, persists AI analysis to DB
 ├── frontend/
-│   ├── src/pages/            # Dashboard, Simulation, Reflection, Profile, Learning, Home
+│   ├── src/pages/            # Dashboard, Scenarios, Simulation, Reflection, Profile, Learning, Home
 │   ├── src/components/
 │   │   ├── reflection/       # Extracted: ProcessGauge, PatternCard, CalibrationCard, etc.
 │   │   ├── simulation/       # SimulationBriefing, InfoPanels, etc.

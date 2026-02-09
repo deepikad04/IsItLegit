@@ -74,10 +74,30 @@ class GeminiService:
         self.timeout = settings.gemini_timeout_seconds
         self.model_name = settings.gemini_model
 
+        # Auto-fallback: when quota is exhausted, temporarily switch to mock
+        # mode for a cooldown period instead of retrying every call
+        self._quota_exhausted_until: float = 0.0  # unix timestamp
+        self._quota_cooldown_seconds: int = 300  # 5 min cooldown
+
         if not self.use_mock and settings.gemini_api_key:
             self.client = genai.Client(api_key=settings.gemini_api_key)
         else:
             self.client = None
+
+    @property
+    def _is_quota_exhausted(self) -> bool:
+        """Check if we're in a quota-exhaustion cooldown window."""
+        import time
+        return time.time() < self._quota_exhausted_until
+
+    def _mark_quota_exhausted(self):
+        """Set cooldown so all subsequent calls auto-fallback to heuristics."""
+        import time
+        self._quota_exhausted_until = time.time() + self._quota_cooldown_seconds
+        logger.warning(
+            "Gemini quota exhausted — auto-fallback to heuristics for %ds",
+            self._quota_cooldown_seconds,
+        )
 
     # ── Low-level Gemini call with retries + timeout + schema validation ──
 
@@ -101,6 +121,10 @@ class GeminiService:
         if cache_key_str and cache_key_str in _cache:
             logger.info("Cache hit for %s", cache_key_str)
             return _cache[cache_key_str]
+
+        # If quota is exhausted, fail fast so the caller falls back to heuristic
+        if self._is_quota_exhausted:
+            raise RuntimeError("Gemini quota exhausted — using heuristic fallback")
 
         last_error: Exception | None = None
 
@@ -191,10 +215,9 @@ class GeminiService:
 
             except Exception as e:
                 error_str = str(e).lower()
-                if "429" in error_str or "rate" in error_str or "quota" in error_str:
-                    wait = 2 ** attempt
-                    logger.warning("Rate limited, backing off %ds", wait)
-                    await asyncio.sleep(wait)
+                if "429" in error_str or "rate" in error_str or "quota" in error_str or "resource_exhausted" in error_str:
+                    self._mark_quota_exhausted()
+                    raise RuntimeError(f"Gemini quota exhausted: {e}")
                 else:
                     logger.error("Gemini error attempt %d: %s", attempt, e)
                 last_error = e
@@ -331,7 +354,7 @@ class GeminiService:
         why, pro-comparison, coaching, etc. — saving ~5x input tokens.
         Returns the cached_content name, or None if caching fails.
         """
-        if self.use_mock or not self.client:
+        if self.use_mock or not self.client or self._is_quota_exhausted:
             return None
 
         # Return existing cache if available
@@ -388,7 +411,7 @@ class GeminiService:
         scenario: Scenario,
     ) -> ReflectionResponse:
         """Full reflection analysis — the core Gemini call."""
-        if self.use_mock or not self.client:
+        if self.use_mock or not self.client or self._is_quota_exhausted:
             return self._heuristic_analyze(simulation, decisions, scenario)
 
         outcome = simulation.final_outcome or {}
@@ -423,7 +446,7 @@ class GeminiService:
         scenario: Scenario,
     ) -> list[Counterfactual]:
         """Dynamic counterfactuals generated from the actual decision trace."""
-        if self.use_mock or not self.client:
+        if self.use_mock or not self.client or self._is_quota_exhausted:
             return self._heuristic_counterfactuals(simulation, decisions, scenario)
 
         prompt = self._build_counterfactual_prompt(simulation, decisions, scenario)
@@ -449,7 +472,7 @@ class GeminiService:
         scenario: Scenario,
     ) -> WhyThisDecisionResponse:
         """'Why this decision?' — Gemini explains each bias detection using actual actions."""
-        if self.use_mock or not self.client:
+        if self.use_mock or not self.client or self._is_quota_exhausted:
             return self._heuristic_explain_decisions(simulation, decisions, scenario)
 
         prompt = self._build_why_prompt(simulation, decisions, scenario)
@@ -476,7 +499,7 @@ class GeminiService:
         scenario: Scenario,
     ) -> ProComparisonResponse:
         """'What would a pro do?' — side-by-side with an expert decision path."""
-        if self.use_mock or not self.client:
+        if self.use_mock or not self.client or self._is_quota_exhausted:
             return self._heuristic_pro_comparison(simulation, decisions, scenario)
 
         prompt = self._build_pro_prompt(simulation, decisions, scenario)
@@ -504,7 +527,7 @@ class GeminiService:
         behavior_profile: dict | None = None,
     ) -> str:
         """Personalized coaching message that adapts using the behavior profile."""
-        if self.use_mock or not self.client:
+        if self.use_mock or not self.client or self._is_quota_exhausted:
             return self._heuristic_coaching(simulation, decisions, scenario, behavior_profile)
 
         prompt = self._build_coaching_prompt(simulation, decisions, scenario, behavior_profile)
@@ -532,7 +555,7 @@ class GeminiService:
         existing_profile: dict | None = None,
     ) -> dict:
         """Use Gemini to update the compressed behavior profile with new simulation data."""
-        if self.use_mock or not self.client:
+        if self.use_mock or not self.client or self._is_quota_exhausted:
             return self._heuristic_profile_update(existing_profile, decisions)
 
         prompt = self._build_profile_prompt(simulation, decisions, scenario, existing_profile)
@@ -571,7 +594,7 @@ class GeminiService:
         Returns:
             Dict matching _BiasClassifierGeminiOutput schema.
         """
-        if self.use_mock or not self.client:
+        if self.use_mock or not self.client or self._is_quota_exhausted:
             return self._heuristic_bias_classification(simulation, decisions, scenario, decision_features)
 
         prompt = self._build_bias_classifier_prompt(simulation, decisions, scenario, decision_features)
@@ -615,7 +638,7 @@ class GeminiService:
         Returns:
             Dict matching _ConfidenceCalibrationGeminiOutput schema.
         """
-        if self.use_mock or not self.client:
+        if self.use_mock or not self.client or self._is_quota_exhausted:
             return self._heuristic_confidence_calibration(
                 simulation, decisions, scenario, patterns_detected, evidence_signals
             )
@@ -662,7 +685,7 @@ class GeminiService:
         Returns:
             Dict matching _BehaviorHistoryGeminiOutput schema.
         """
-        if self.use_mock or not self.client:
+        if self.use_mock or not self.client or self._is_quota_exhausted:
             return self._heuristic_behavior_history(history_summary, existing_profile)
 
         prompt = self._build_behavior_history_prompt(history_summary, existing_profile)
@@ -685,7 +708,7 @@ class GeminiService:
 
     async def generate_learning_modules(self, profile_data: dict) -> list[dict]:
         """Generate personalized learning modules targeting the user's weaknesses."""
-        if self.use_mock or not self.client:
+        if self.use_mock or not self.client or self._is_quota_exhausted:
             return self._heuristic_learning_modules(profile_data)
 
         weaknesses = profile_data.get("weaknesses", [])
@@ -2254,7 +2277,7 @@ Return valid JSON matching this exact schema:
         worst = max(high_bias, key=lambda e: sum(e["biases"].values()))
         dominant = max(worst["biases"], key=worst["biases"].get)
 
-        if self.use_mock or not self.client:
+        if self.use_mock or not self.client or self._is_quota_exhausted:
             return self._heuristic_nudge(dominant, worst)
 
         prompt = f"""<role>
@@ -2317,7 +2340,7 @@ Return JSON: {{"message": "your coaching nudge", "bias": "{dominant}"}}
         decisions_so_far: list[Decision],
     ) -> dict:
         """Rate the user's reasoning before they confirm a decision."""
-        if self.use_mock or not self.client:
+        if self.use_mock or not self.client or self._is_quota_exhausted:
             return self._heuristic_challenge(decision_type, amount, rationale, current_state)
 
         prompt = f"""<role>
@@ -2391,7 +2414,7 @@ Return JSON: {{"reasoning_score": 1-5, "feedback": "one sentence"}}
 
     async def generate_adaptive_scenario(self, profile_data: dict) -> dict:
         """Generate a custom scenario targeting the user's weakest bias."""
-        if self.use_mock or not self.client:
+        if self.use_mock or not self.client or self._is_quota_exhausted:
             return self._heuristic_adaptive_scenario(profile_data)
 
         prompt = f"""<role>
@@ -2761,7 +2784,7 @@ Return valid JSON:
         behavior_profile: dict | None = None,
     ) -> dict:
         """Single Gemini call returning reflection + counterfactuals + coaching."""
-        if self.use_mock or not self.client:
+        if self.use_mock or not self.client or self._is_quota_exhausted:
             reflection = self._heuristic_analyze(simulation, decisions, scenario)
             counterfactuals = self._heuristic_counterfactuals(simulation, decisions, scenario)
             coaching = self._heuristic_coaching(simulation, decisions, scenario, behavior_profile)
@@ -2875,7 +2898,7 @@ Return valid JSON matching this schema:
         scenario: Scenario,
     ) -> dict:
         """Bias intensity at each decision point."""
-        if self.use_mock or not self.client:
+        if self.use_mock or not self.client or self._is_quota_exhausted:
             return self._heuristic_bias_heatmap(decisions)
 
         prompt = self._build_bias_heatmap_prompt(simulation, decisions, scenario)
@@ -3002,7 +3025,7 @@ Return JSON: {{"timeline": [{{"timestamp_seconds": int, "decision_index": int, "
         scenario: Scenario,
     ) -> dict:
         """Critique user's stated rationales for each decision."""
-        if self.use_mock or not self.client:
+        if self.use_mock or not self.client or self._is_quota_exhausted:
             return self._heuristic_rationale_review(decisions)
 
         prompt = self._build_rationale_prompt(simulation, decisions, scenario)
@@ -3113,7 +3136,7 @@ Return JSON: {{"reviews": [{{"decision_index": int, "user_rationale": "string", 
         target_decision_index: int,
     ) -> dict:
         """Show causal impact of changing a single decision."""
-        if self.use_mock or not self.client:
+        if self.use_mock or not self.client or self._is_quota_exhausted:
             return self._heuristic_isolate_counterfactual(simulation, decisions, scenario, target_decision_index)
 
         target = decisions[target_decision_index]
@@ -3234,7 +3257,7 @@ Return JSON: {{"original_decision": "string", "alternative_decision": "string", 
 
     async def generate_playbook(self, profile_data: dict) -> dict:
         """Generate a personal do/don't playbook from the behavior profile."""
-        if self.use_mock or not self.client:
+        if self.use_mock or not self.client or self._is_quota_exhausted:
             return self._heuristic_playbook(profile_data)
 
         prompt = f"""<role>
@@ -3272,7 +3295,7 @@ Return JSON: {{"dos": ["3-5 specific things to do"], "donts": ["3-5 specific thi
 
     async def check_playbook_adherence(self, playbook: dict, decisions: list[Decision], simulation: Simulation) -> dict:
         """Check how well a user followed their playbook in a simulation."""
-        if self.use_mock or not self.client:
+        if self.use_mock or not self.client or self._is_quota_exhausted:
             return self._heuristic_adherence(playbook, decisions)
 
         prompt = f"""<role>
@@ -3401,21 +3424,107 @@ Return JSON: {{"adherence_score": 0-100, "followed": ["rules that were followed"
             "stress_response": "unknown",
         }
 
-        # Simple heuristic updates
-        quick = sum(1 for d in decisions if (d.time_spent_seconds or 10) < 5)
         total = max(len(decisions), 1)
-
         bp = profile.get("bias_patterns", {})
-        old_imp = bp.get("impulsivity", 0.5)
-        new_imp = quick / total
-        bp["impulsivity"] = old_imp * 0.7 + new_imp * 0.3  # Running average
 
-        if new_imp < 0.3:
-            profile.setdefault("strengths", [])
-            if "patience" not in profile["strengths"]:
-                profile["strengths"].append("patience")
+        def _ema(key: str, new_val: float) -> float:
+            """Exponential moving average with existing value."""
+            old = bp.get(key, 0.5)
+            return old * 0.7 + new_val * 0.3
 
+        # --- Impulsivity: fast decisions (< 5s deliberation) ---
+        quick = sum(1 for d in decisions if (d.time_spent_seconds or 10) < 5)
+        bp["impulsivity"] = _ema("impulsivity", quick / total)
+
+        # --- FOMO: buying during price rises ---
+        buys = [d for d in decisions if d.decision_type == "buy"]
+        if buys:
+            fomo_buys = sum(1 for d in buys if (d.market_state_at_decision or {}).get("price_change_pct", 0) > 2)
+            bp["fomo"] = _ema("fomo", fomo_buys / max(len(buys), 1))
+        else:
+            bp["fomo"] = _ema("fomo", 0.3)
+
+        # --- Loss aversion: reluctance to sell at a loss / panic selling ---
+        sells = [d for d in decisions if d.decision_type == "sell"]
+        holds = [d for d in decisions if d.decision_type in ("hold", "wait")]
+        if sells or holds:
+            panic_sells = sum(1 for d in sells if (d.confidence_level or 3) <= 2)
+            bp["loss_aversion"] = _ema("loss_aversion", panic_sells / max(len(sells) + len(holds), 1))
+        else:
+            bp["loss_aversion"] = _ema("loss_aversion", 0.4)
+
+        # --- Anchoring: decisions clustered near initial price ---
+        prices = [d.price_at_decision for d in decisions if d.price_at_decision]
+        if len(prices) >= 2:
+            initial = prices[0]
+            near_anchor = sum(1 for p in prices if abs(p - initial) / max(initial, 1) < 0.03)
+            bp["anchoring"] = _ema("anchoring", near_anchor / len(prices))
+        else:
+            bp["anchoring"] = _ema("anchoring", 0.4)
+
+        # --- Social proof: acting after social/news events ---
+        social_driven = sum(
+            1 for d in decisions
+            if d.events_since_last and any(
+                e.get("type") in ("social", "news") for e in (d.events_since_last or []) if isinstance(e, dict)
+            )
+        )
+        bp["social_proof_reliance"] = _ema("social_proof_reliance", social_driven / total)
+
+        # --- Overconfidence: high confidence (4-5) on trades ---
+        confident = [d for d in decisions if (d.confidence_level or 3) >= 4]
+        bp["overconfidence"] = _ema("overconfidence", len(confident) / total)
+
+        # --- Recency bias: more activity in later half of simulation ---
+        if len(decisions) >= 4:
+            mid = len(decisions) // 2
+            later_actions = sum(1 for d in decisions[mid:] if d.decision_type in ("buy", "sell"))
+            earlier_actions = sum(1 for d in decisions[:mid] if d.decision_type in ("buy", "sell"))
+            recency = later_actions / max(later_actions + earlier_actions, 1)
+            bp["recency_bias"] = _ema("recency_bias", recency)
+        else:
+            bp["recency_bias"] = _ema("recency_bias", 0.4)
+
+        # --- Confirmation bias: ignoring available information ---
+        ignored_info = sum(1 for d in decisions if d.info_ignored and len(d.info_ignored) > 0)
+        bp["confirmation_bias"] = _ema("confirmation_bias", ignored_info / total)
+
+        # Derive strengths and weaknesses from bias patterns
+        strengths = profile.get("strengths", [])
+        weaknesses = profile.get("weaknesses", [])
+
+        low_biases = [k for k, v in bp.items() if v < 0.35]
+        high_biases = [k for k, v in bp.items() if v > 0.6]
+
+        bias_to_strength = {
+            "impulsivity": "patience", "fomo": "discipline",
+            "loss_aversion": "rational_risk_taking", "anchoring": "flexible_thinking",
+            "social_proof_reliance": "independent_thinking", "overconfidence": "calibrated_confidence",
+            "recency_bias": "long_term_perspective", "confirmation_bias": "open_mindedness",
+        }
+
+        for b in low_biases:
+            s = bias_to_strength.get(b, b)
+            if s not in strengths:
+                strengths.append(s)
+        for b in high_biases:
+            if b not in weaknesses:
+                weaknesses.append(b)
+
+        profile["strengths"] = strengths[-5:]  # Keep top 5
+        profile["weaknesses"] = weaknesses[-5:]
         profile["bias_patterns"] = bp
+        profile["decision_style"] = (
+            "impulsive" if bp.get("impulsivity", 0) > 0.6
+            else "cautious" if bp.get("loss_aversion", 0) > 0.6
+            else "analytical" if bp.get("confirmation_bias", 0) < 0.3
+            else "reactive"
+        )
+        profile["stress_response"] = (
+            "panic" if bp.get("loss_aversion", 0) > 0.6
+            else "freeze" if bp.get("impulsivity", 0) < 0.2
+            else "steady"
+        )
         profile["improvement_notes"] = "Updated from latest simulation"
         return profile
 
@@ -3430,7 +3539,7 @@ Return JSON: {{"adherence_score": 0-100, "followed": ["rules that were followed"
         Use Google Search grounding to fact-check a news claim or social post.
         Returns a credibility assessment with grounding sources.
         """
-        if self.use_mock or not self.client:
+        if self.use_mock or not self.client or self._is_quota_exhausted:
             return self._heuristic_credibility(claim, source_type)
 
         prompt = f"""<role>
@@ -3539,7 +3648,7 @@ Return valid JSON:
         Use Gemini URL Context to read an article and generate a trading scenario.
         The user pastes a URL, Gemini extracts the key facts, and creates a sim.
         """
-        if self.use_mock or not self.client:
+        if self.use_mock or not self.client or self._is_quota_exhausted:
             return self._heuristic_url_scenario(url, difficulty)
 
         if not settings.gemini_enable_url_context:

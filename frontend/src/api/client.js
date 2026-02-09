@@ -69,7 +69,8 @@ export const simulationsApi = {
 export const streamApi = {
   simulationStream: async (id) => {
     const res = await simulationsApi.getStreamToken(id);
-    return fetch(`/api/simulations/${id}/stream?token=${res.data.token}`);
+    const base = import.meta.env.VITE_API_URL || '/api';
+    return fetch(`${base}/simulations/${id}/stream?token=${res.data.token}`);
   },
 };
 

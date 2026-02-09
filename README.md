@@ -9,7 +9,7 @@ Built with React, FastAPI, PostgreSQL, and Google Gemini.
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green)
 ![Gemini](https://img.shields.io/badge/Google%20Gemini-AI-orange)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
-![Tests](https://img.shields.io/badge/Tests-158%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-187%20passing-brightgreen)
 
 ---
 
@@ -331,7 +331,7 @@ cd backend
 pytest
 ```
 
-158 backend tests + 29 frontend tests covering schema validation, simulation engine determinism, Gemini advanced features, and UI components.
+187 tests (158 backend + 29 frontend) covering schema validation, simulation engine determinism, Gemini advanced features, and UI components.
 
 ---
 

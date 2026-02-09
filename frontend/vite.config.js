@@ -18,5 +18,8 @@ export default defineConfig({
     setupFiles: './src/test/setup.js',
     css: true,
     exclude: ['**/e2e/**', '**/node_modules/**'],
+    env: {
+      NODE_ENV: 'development',
+    },
   }
 })

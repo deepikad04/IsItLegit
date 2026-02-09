@@ -101,7 +101,7 @@ export default function Reflection() {
   const copyShareText = () => {
     if (!reflection) return;
     const pq = reflection.process_quality?.score || 0;
-    const biases = reflection.patterns_detected?.map(p => p.pattern_name.replace(/_/g, ' ')).join(', ') || 'none detected';
+    const biases = reflection.patterns_detected?.map(p => (p.pattern_name || 'unknown').replace(/_/g, ' ')).join(', ') || 'none detected';
     const cal = calibration?.calibration_score != null ? `${Math.round(calibration.calibration_score)}%` : 'N/A';
     const text = [
       `IsItLegit — Decision Training Results`,
@@ -313,7 +313,7 @@ export default function Reflection() {
           <p className="text-brand-navy/80 leading-relaxed mb-5">
             You made <span className={clsx('font-bold', processScore >= 70 ? 'text-green-700' : processScore >= 50 ? 'text-amber-600' : 'text-red-600')}>{processLabel} decisions</span>
             {topBias ? (
-              <>, with <span className="font-bold text-amber-600">{topBias.pattern_name.replace(/_/g, ' ')}</span> as your strongest bias ({Math.round(topBias.confidence * 100)}% confidence)</>
+              <>, with <span className="font-bold text-amber-600">{(topBias.pattern_name || 'unknown bias').replace(/_/g, ' ')}</span> as your strongest bias ({Math.round((topBias.confidence || 0) * 100)}% confidence)</>
             ) : (
               <> with no strong biases detected</>
             )}
@@ -344,7 +344,7 @@ export default function Reflection() {
               <div>
                 <p className="text-xs text-brand-navy/50 uppercase tracking-wide">Top Bias</p>
                 <p className="text-sm font-semibold text-brand-navy capitalize">
-                  {topBias ? topBias.pattern_name.replace(/_/g, ' ') : 'None detected'}
+                  {topBias ? (topBias.pattern_name || 'unknown bias').replace(/_/g, ' ') : 'None detected'}
                 </p>
               </div>
             </div>
@@ -637,7 +637,7 @@ export default function Reflection() {
                   <div className="p-4 bg-brand-lavender/30 rounded-lg border-l-4 border-orange-500">
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="font-medium text-brand-navy">
-                        Decision #{exp.decision_index + 1}: {exp.decision_type.toUpperCase()} at {exp.timestamp_seconds}s
+                        Decision #{(exp.decision_index ?? 0) + 1}: {(exp.decision_type || 'action').toUpperCase()} at {exp.timestamp_seconds ?? 0}s
                       </h4>
                       <span className={clsx(
                         'text-xs px-2 py-1 rounded',
@@ -649,7 +649,7 @@ export default function Reflection() {
                       </span>
                     </div>
                     <p className="text-sm text-orange-600 mb-2 capitalize">
-                      Detected: {exp.detected_bias.replace(/_/g, ' ')}
+                      Detected: {(exp.detected_bias || 'unknown').replace(/_/g, ' ')}
                     </p>
                     <p className="text-brand-navy/70 text-sm mb-3">{exp.explanation}</p>
                     <div className="space-y-1 mb-3">
@@ -1171,7 +1171,7 @@ export default function Reflection() {
                     <div className="flex flex-wrap gap-1.5">
                       {reflection.patterns_detected.map((p, i) => (
                         <span key={i} className="text-xs px-2 py-1 rounded-full bg-yellow-100 text-amber-600">
-                          {p.pattern_name.replace(/_/g, ' ')}
+                          {(p.pattern_name || 'unknown').replace(/_/g, ' ')}
                         </span>
                       ))}
                     </div>

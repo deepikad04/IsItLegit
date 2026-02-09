@@ -56,7 +56,7 @@ function BiasPatternRow({ pattern }) {
   return (
     <div className="flex items-center justify-between py-3 border-b border-brand-blue/20 last:border-0">
       <div className="flex-1">
-        <p className="text-brand-navy font-medium capitalize">{pattern.name.replace(/_/g, ' ')}</p>
+        <p className="text-brand-navy font-medium capitalize">{(pattern.name || 'unknown').replace(/_/g, ' ')}</p>
         <p className="text-brand-navy/60 text-sm">{pattern.description}</p>
       </div>
       <div className="flex items-center space-x-4">
@@ -298,7 +298,7 @@ export default function Profile() {
 
   // Generate radar chart data from bias patterns
   const radarData = profile?.bias_patterns?.map(p => ({
-    subject: p.name.replace(/_/g, ' ').split(' ').map(w => w[0].toUpperCase() + w.slice(1)).join(' '),
+    subject: (p.name || 'unknown').replace(/_/g, ' ').split(' ').map(w => w[0].toUpperCase() + w.slice(1)).join(' '),
     value: Math.round((1 - p.score) * 100), // Invert so higher = better
     fullMark: 100
   })) || [];

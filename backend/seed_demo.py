@@ -322,6 +322,8 @@ def seed():
     for email in ["demo@isitlegit.com", "alex@isitlegit.com"]:
         existing = db.query(User).filter(User.email == email).first()
         if existing:
+            # Delete AI-generated scenarios referencing this user (no cascade on FK)
+            db.query(Scenario).filter(Scenario.generated_for_user_id == existing.id).delete()
             db.delete(existing)
             db.commit()
     print("Cleaned existing demo users")

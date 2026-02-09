@@ -35,7 +35,7 @@ router = APIRouter(prefix="/api/simulations", tags=["simulations"])
 _stream_tokens: TTLCache = TTLCache(maxsize=512, ttl=60)
 
 
-@router.post("/start", response_model=SimulationState)
+@router.post("/start", response_model=SimulationState, summary="Start a new simulation")
 async def start_simulation(
     data: SimulationCreate,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -91,7 +91,7 @@ async def start_simulation(
     )
 
 
-@router.get("/{simulation_id}/state", response_model=SimulationState)
+@router.get("/{simulation_id}/state", response_model=SimulationState, summary="Get simulation state at time T")
 async def get_simulation_state(
     simulation_id: UUID,
     time_elapsed: int,
@@ -143,7 +143,7 @@ async def get_simulation_state(
     )
 
 
-@router.post("/{simulation_id}/decision", response_model=DecisionResponse)
+@router.post("/{simulation_id}/decision", response_model=DecisionResponse, summary="Submit a trading decision")
 async def make_decision(
     simulation_id: UUID,
     decision_data: DecisionCreate,
@@ -247,7 +247,7 @@ class ChallengeRequest(BaseModel):
     rationale: str
 
 
-@router.post("/{simulation_id}/challenge")
+@router.post("/{simulation_id}/challenge", summary="Challenge my reasoning (AI)")
 async def challenge_decision(
     simulation_id: UUID,
     data: ChallengeRequest,
@@ -293,7 +293,7 @@ class SkipTimeRequest(BaseModel):
     seconds: int
 
 
-@router.post("/{simulation_id}/skip-time", response_model=SimulationState)
+@router.post("/{simulation_id}/skip-time", response_model=SimulationState, summary="Fast-forward simulation time")
 async def skip_time(
     simulation_id: UUID,
     data: SkipTimeRequest,
@@ -341,7 +341,7 @@ async def skip_time(
     )
 
 
-@router.post("/{simulation_id}/complete", response_model=SimulationOutcome)
+@router.post("/{simulation_id}/complete", response_model=SimulationOutcome, summary="Complete simulation and get results")
 async def complete_simulation(
     simulation_id: UUID,
     complete_data: SimulationComplete,
@@ -433,7 +433,7 @@ async def complete_simulation(
     )
 
 
-@router.post("/{simulation_id}/abandon")
+@router.post("/{simulation_id}/abandon", summary="Abandon simulation")
 async def abandon_simulation(
     simulation_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -458,7 +458,7 @@ async def abandon_simulation(
     return {"message": "Simulation abandoned"}
 
 
-@router.get("/", response_model=list[SimulationResponse])
+@router.get("/", response_model=list[SimulationResponse], summary="List user's simulations")
 async def list_simulations(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -480,7 +480,7 @@ async def list_simulations(
 
 # ── Credibility Check (Google Search Grounding) ─────────────────────
 
-@router.post("/verify-credibility")
+@router.post("/verify-credibility", summary="Fact-check a claim (Google Search grounding)")
 @limiter.limit("5/minute")
 async def verify_credibility(
     request: Request,
@@ -498,7 +498,7 @@ async def verify_credibility(
 
 # ── Stream Token (Phase 1.2: hardened SSE auth) ─────────────────────
 
-@router.post("/{simulation_id}/stream-token")
+@router.post("/{simulation_id}/stream-token", summary="Get SSE stream auth token")
 async def get_stream_token(
     simulation_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -522,7 +522,7 @@ async def get_stream_token(
     return {"token": token}
 
 
-@router.get("/{simulation_id}/stream")
+@router.get("/{simulation_id}/stream", summary="SSE real-time price stream")
 async def stream_simulation(
     simulation_id: UUID,
     token: str = Query(..., description="Stream token for SSE auth"),

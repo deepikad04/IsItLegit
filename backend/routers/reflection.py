@@ -22,7 +22,7 @@ from schemas.reflection import (
 router = APIRouter(prefix="/api/reflection", tags=["reflection"])
 
 
-@router.get("/{simulation_id}", response_model=ReflectionResponse)
+@router.get("/{simulation_id}", response_model=ReflectionResponse, summary="Get reflection analysis")
 @limiter.limit("10/minute")
 async def get_reflection(
     request: Request,
@@ -72,7 +72,7 @@ async def get_reflection(
     return analysis
 
 
-@router.get("/{simulation_id}/counterfactuals", response_model=list[Counterfactual])
+@router.get("/{simulation_id}/counterfactuals", response_model=list[Counterfactual], summary="Get counterfactual timelines")
 @limiter.limit("10/minute")
 async def get_counterfactuals(
     request: Request,
@@ -210,7 +210,7 @@ async def _load_completed_simulation(
     return simulation, decisions
 
 
-@router.get("/{simulation_id}/why", response_model=WhyThisDecisionResponse)
+@router.get("/{simulation_id}/why", response_model=WhyThisDecisionResponse, summary="Why this decision?")
 @limiter.limit("10/minute")
 async def why_this_decision(
     request: Request,
@@ -237,7 +237,7 @@ async def why_this_decision(
     return result
 
 
-@router.get("/{simulation_id}/pro-comparison")
+@router.get("/{simulation_id}/pro-comparison", summary="Expert vs your decisions")
 @limiter.limit("10/minute")
 async def pro_comparison(
     request: Request,
@@ -276,7 +276,7 @@ async def pro_comparison(
     return data
 
 
-@router.get("/{simulation_id}/coaching")
+@router.get("/{simulation_id}/coaching", summary="Personalized coaching & profile update")
 @limiter.limit("10/minute")
 async def get_coaching(
     request: Request,
@@ -341,7 +341,7 @@ async def get_coaching(
     return result
 
 
-@router.get("/{simulation_id}/full")
+@router.get("/{simulation_id}/full", summary="Full reflection + counterfactuals (batch)")
 @limiter.limit("5/minute")
 async def get_full_reflection(
     request: Request,
@@ -381,7 +381,7 @@ async def get_full_reflection(
     return result
 
 
-@router.get("/{simulation_id}/bias-heatmap")
+@router.get("/{simulation_id}/bias-heatmap", summary="Bias intensity heatmap over time")
 @limiter.limit("10/minute")
 async def get_bias_heatmap(
     request: Request,
@@ -410,7 +410,7 @@ async def get_bias_heatmap(
     return result
 
 
-@router.get("/{simulation_id}/rationale-review")
+@router.get("/{simulation_id}/rationale-review", summary="AI critique of your stated reasoning")
 @limiter.limit("10/minute")
 async def review_rationales(
     request: Request,
@@ -442,7 +442,7 @@ async def review_rationales(
     return result
 
 
-@router.get("/{simulation_id}/calibration")
+@router.get("/{simulation_id}/calibration", summary="Confidence calibration report")
 async def get_calibration(
     simulation_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -456,7 +456,7 @@ async def get_calibration(
     return engine.get_calibration_report(decisions)
 
 
-@router.get("/{simulation_id}/outcome-distribution")
+@router.get("/{simulation_id}/outcome-distribution", summary="Monte Carlo outcome distribution")
 async def get_outcome_distribution(
     simulation_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -470,7 +470,7 @@ async def get_outcome_distribution(
     return engine.monte_carlo_outcomes(decisions, n=100)
 
 
-@router.get("/{simulation_id}/counterfactual-isolation")
+@router.get("/{simulation_id}/counterfactual-isolation", summary="Isolate impact of a single decision")
 @limiter.limit("5/minute")
 async def counterfactual_isolation(
     request: Request,

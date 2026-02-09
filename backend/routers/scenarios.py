@@ -49,7 +49,7 @@ def load_scenarios_from_json(db: Session):
         db.commit()
 
 
-@router.get("/", response_model=list[ScenarioResponse])
+@router.get("/", response_model=list[ScenarioResponse], summary="List all scenarios")
 async def list_scenarios(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -74,7 +74,7 @@ async def list_scenarios(
     return query.all()
 
 
-@router.get("/unlocked")
+@router.get("/unlocked", summary="List scenarios with unlock status")
 async def list_unlocked_scenarios(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -130,7 +130,7 @@ def _check_unlock(scenario: Scenario, completed_sims: list, user: User) -> bool:
     return True
 
 
-@router.post("/generate-adaptive")
+@router.post("/generate-adaptive", summary="AI-generate scenario targeting weaknesses")
 @limiter.limit("3/minute")
 async def generate_adaptive_scenario(
     request: Request,
@@ -180,7 +180,7 @@ async def generate_adaptive_scenario(
     }
 
 
-@router.post("/generate-from-url")
+@router.post("/generate-from-url", summary="Generate scenario from news article URL")
 @limiter.limit("3/minute")
 async def generate_scenario_from_url(
     request: Request,
@@ -224,7 +224,7 @@ async def generate_scenario_from_url(
     }
 
 
-@router.get("/categories")
+@router.get("/categories", summary="List scenario categories")
 async def list_categories(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db)
@@ -234,7 +234,7 @@ async def list_categories(
     return [c[0] for c in categories]
 
 
-@router.get("/{scenario_id}", response_model=ScenarioDetailResponse)
+@router.get("/{scenario_id}", response_model=ScenarioDetailResponse, summary="Get scenario details")
 async def get_scenario(
     scenario_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],

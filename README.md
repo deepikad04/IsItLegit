@@ -331,6 +331,20 @@ cd backend
 pytest
 ```
 
-158 tests covering schema validation, simulation engine determinism, and Gemini advanced features.
+158 backend tests + 29 frontend tests covering schema validation, simulation engine determinism, Gemini advanced features, and UI components.
+
+---
+
+## Roadmap
+
+Planned features for future development:
+
+- **Multi-asset portfolio simulation** — manage a portfolio of 3-5 correlated assets simultaneously, with sector rotation and diversification analysis
+- **Team / classroom mode** — instructors create cohorts, assign scenarios, and compare aggregate bias patterns across students
+- **Real-time market data integration** — connect to live market feeds to generate scenarios from actual price action as it happens
+- **Mobile-native app** — React Native version with push notifications for daily bias training exercises
+- **Spaced repetition for bias training** — schedule scenario replays targeting biases that are fading from memory
+- **Community scenario marketplace** — users create and share custom scenarios with difficulty ratings and bias tags
+- **Export to portfolio tracker** — integrate with brokerage APIs to compare simulated decisions with real trading behavior
 
 ---

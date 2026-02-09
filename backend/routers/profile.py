@@ -24,7 +24,7 @@ from schemas.behavior_profile import (
 router = APIRouter(prefix="/api/profile", tags=["profile"])
 
 
-@router.get("/", response_model=BehaviorProfileResponse)
+@router.get("/", response_model=BehaviorProfileResponse, summary="Get full behavior profile")
 async def get_behavior_profile(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db)
@@ -76,7 +76,7 @@ async def get_behavior_profile(
     )
 
 
-@router.get("/summary", response_model=ProfileSummary)
+@router.get("/summary", response_model=ProfileSummary, summary="Dashboard profile summary")
 async def get_profile_summary(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db)
@@ -118,7 +118,7 @@ async def get_profile_summary(
     )
 
 
-@router.get("/history")
+@router.get("/history", summary="Simulation history with scores")
 async def get_simulation_history(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -142,7 +142,7 @@ async def get_simulation_history(
     ]
 
 
-@router.get("/playbook")
+@router.get("/playbook", summary="Get personal do/don't playbook")
 async def get_playbook(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -173,7 +173,7 @@ async def get_playbook(
     return playbook
 
 
-@router.post("/playbook/track")
+@router.post("/playbook/track", summary="Check playbook adherence for a simulation")
 async def track_playbook_adherence(
     simulation_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],

@@ -354,7 +354,7 @@ export default function Simulation() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [phase, simulation, decisionAmount, confidence, rationale, orderType, limitPrice, stopPrice, isHalted]);
+  }, [phase, simulation, decisionAmount, confidence, rationale, orderType, limitPrice, stopPrice, state]);
 
   /* ─── Actions ───────────────────────────────────────────────── */
 
@@ -542,7 +542,7 @@ export default function Simulation() {
             <AlertCircle className="h-8 w-8 text-red-600" />
           </div>
           <h2 className="text-xl font-bold text-gray-900 mb-2">Unable to Load</h2>
-          <p className="text-gray-500 mb-6 text-sm">{error}</p>
+          <p className="text-gray-500 mb-6 text-sm" role="alert">{error}</p>
           <div className="flex justify-center gap-3">
             <button
               onClick={() => { setError(null); setLoading(true); loadScenario(); }}
@@ -757,7 +757,7 @@ export default function Simulation() {
 
       {/* Halt banner */}
       {isHalted && (
-        <div className="fixed top-0 left-0 right-0 z-30 bg-red-600 text-white py-3 px-4 text-center font-bold text-base flex items-center justify-center gap-3 shadow-xl">
+        <div role="alert" className="fixed top-0 left-0 right-0 z-30 bg-red-600 text-white py-3 px-4 text-center font-bold text-base flex items-center justify-center gap-3 shadow-xl">
           <Ban className="h-6 w-6" />
           TRADING HALTED — Circuit breaker triggered
         </div>
@@ -1204,11 +1204,12 @@ export default function Simulation() {
         {/* Amount + Confidence row */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
           <div>
-            <label className="text-sm font-bold text-gray-700 mb-2 block">Trade Amount</label>
+            <label htmlFor="trade-amount" className="text-sm font-bold text-gray-700 mb-2 block">Trade Amount</label>
             <div className="flex items-center gap-3">
-              <input type="range" min="10" max={portfolio.cash || 1000}
+              <input id="trade-amount" type="range" min="10" max={portfolio.cash || 1000}
                 value={decisionAmount}
                 onChange={(e) => setDecisionAmount(Number(e.target.value))}
+                aria-label={`Trade amount: ${decisionAmount} dollars`}
                 className="flex-1 accent-brand-navy h-2"
               />
               <span className="text-lg font-black text-gray-900 font-mono w-28 text-right">${decisionAmount}</span>
@@ -1221,10 +1222,12 @@ export default function Simulation() {
             )}
           </div>
           <div>
-            <label className="text-sm font-bold text-gray-700 mb-2 block">Confidence</label>
-            <div className="flex items-center gap-2">
+            <label id="confidence-label" className="text-sm font-bold text-gray-700 mb-2 block">Confidence</label>
+            <div className="flex items-center gap-2" role="group" aria-labelledby="confidence-label">
               {[1, 2, 3, 4, 5].map((level) => (
                 <button key={level} onClick={() => setConfidence(level)}
+                  aria-label={`Confidence level ${level}`}
+                  aria-pressed={confidence === level}
                   className={clsx(
                     'w-11 h-11 rounded-xl font-bold text-base transition-all',
                     confidence === level
@@ -1283,6 +1286,7 @@ export default function Simulation() {
           <label className="text-sm font-bold text-gray-700 mb-2 block">Why are you making this decision? (optional)</label>
           <textarea value={rationale} onChange={(e) => setRationale(e.target.value)}
             placeholder="Type your reasoning... This will be reviewed after the simulation."
+            aria-label="Decision rationale"
             className="w-full bg-gray-50 text-gray-900 rounded-xl p-4 text-sm font-medium resize-none h-20 border-2 border-gray-200 focus:border-brand-navy focus:outline-none placeholder-gray-400"
             maxLength={500}
           />
@@ -1342,6 +1346,7 @@ export default function Simulation() {
         {/* Action Buttons */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
           <button onClick={() => makeDecision('buy')} disabled={isHalted}
+            aria-label={isHalted ? 'Trading halted' : `Buy ${decisionAmount} dollars`}
             className={clsx(
               'flex items-center justify-center gap-2 py-3 sm:py-3.5 rounded-xl font-bold text-sm sm:text-base transition-all shadow-sm',
               isHalted
@@ -1352,6 +1357,7 @@ export default function Simulation() {
             {isHalted ? 'HALTED' : `BUY $${decisionAmount}`}
           </button>
           <button onClick={() => makeDecision('sell')} disabled={isHalted}
+            aria-label={isHalted ? 'Trading halted' : 'Sell position'}
             className={clsx(
               'flex items-center justify-center gap-2 py-3 sm:py-3.5 rounded-xl font-bold text-sm sm:text-base transition-all shadow-sm',
               isHalted
@@ -1362,11 +1368,13 @@ export default function Simulation() {
             {isHalted ? 'HALTED' : 'SELL'}
           </button>
           <button onClick={() => makeDecision('hold')}
+            aria-label="Hold current position"
             className="flex items-center justify-center gap-2 py-3 sm:py-3.5 rounded-xl font-bold text-sm sm:text-base bg-gray-100 text-gray-700 hover:bg-gray-200 transition-all">
             <Minus className="h-4 w-4 sm:h-5 sm:w-5" />
             HOLD
           </button>
           <button onClick={() => setWaitPickerOpen(!waitPickerOpen)}
+            aria-label="Wait and skip time"
             className={clsx(
               'flex items-center justify-center gap-2 py-3 sm:py-3.5 rounded-xl font-bold text-sm sm:text-base transition-all',
               waitPickerOpen

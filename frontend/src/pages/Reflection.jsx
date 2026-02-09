@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import html2canvas from 'html2canvas';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { reflectionApi } from '../api/client';
 import BiasHeatmap from '../components/BiasHeatmap';
@@ -8,7 +9,7 @@ import {
   Lightbulb, AlertTriangle, CheckCircle, ChevronRight,
   Shuffle, Award, ArrowRight, MessageCircle, UserCheck,
   HelpCircle, Eye, FileText, Zap, Search, BarChart2, Clock,
-  Share2, Copy, Check, X
+  Share2, Copy, Check, X, Download
 } from 'lucide-react';
 import clsx from 'clsx';
 import logo from '../../assests/logo.png';
@@ -446,6 +447,28 @@ export default function Reflection() {
   const [copied, setCopied] = useState(false);
   const [showShareCard, setShowShareCard] = useState(false);
   const [showFullAnalysis, setShowFullAnalysis] = useState(false);
+  const [savingImage, setSavingImage] = useState(false);
+  const shareCardRef = useRef(null);
+
+  const saveAsImage = useCallback(async () => {
+    if (!shareCardRef.current) return;
+    setSavingImage(true);
+    try {
+      const canvas = await html2canvas(shareCardRef.current, {
+        backgroundColor: null,
+        scale: 2,
+        useCORS: true,
+      });
+      const link = document.createElement('a');
+      link.download = 'isitlegit-results.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    } catch (err) {
+      console.error('Failed to save image:', err);
+    } finally {
+      setSavingImage(false);
+    }
+  }, []);
 
   const copyShareText = () => {
     if (!reflection) return;
@@ -584,6 +607,15 @@ export default function Reflection() {
   const persona = coaching?.persona || 'supportive';
   const personaStyle = PERSONA_STYLES[persona] || PERSONA_STYLES.supportive;
 
+  // Summary mode computed values
+  const topBias = reflection.patterns_detected?.length > 0
+    ? reflection.patterns_detected.slice().sort((a, b) => b.confidence - a.confidence)[0]
+    : null;
+  const luckPct = Math.round((reflection.luck_factor || 0) * 100);
+  const skillPct = Math.round((reflection.skill_factor || 0) * 100);
+  const processLabel = processScore >= 70 ? 'strong' : processScore >= 50 ? 'average' : 'weak';
+  const driverLabel = skillPct > luckPct ? 'your decisions drove the outcome' : skillPct === luckPct ? 'luck and skill contributed equally' : 'market conditions drove the outcome more than your choices';
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Outcome Header */}
@@ -645,12 +677,19 @@ export default function Reflection() {
       {/* At a Glance Summary (shown when full analysis is collapsed) */}
       {!showFullAnalysis && (
         <div className="card">
-          <h3 className="text-lg font-semibold text-brand-navy mb-4 flex items-center space-x-2">
-            <Zap className="h-5 w-5 text-brand-navy" />
-            <span>At a Glance</span>
-          </h3>
+          {/* Narrative sentence */}
+          <p className="text-brand-navy/80 leading-relaxed mb-5">
+            You made <span className={clsx('font-bold', processScore >= 70 ? 'text-green-700' : processScore >= 50 ? 'text-amber-600' : 'text-red-600')}>{processLabel} decisions</span>
+            {topBias ? (
+              <>, with <span className="font-bold text-amber-600">{topBias.pattern_name.replace(/_/g, ' ')}</span> as your strongest bias ({Math.round(topBias.confidence * 100)}% confidence)</>
+            ) : (
+              <> with no strong biases detected</>
+            )}
+            . Overall, <span className="font-semibold text-brand-navy">{driverLabel}</span> ({skillPct}% skill / {luckPct}% luck).
+          </p>
+
+          {/* Compact stat tiles */}
           <div className="grid sm:grid-cols-3 gap-4 mb-5">
-            {/* Process Score */}
             <div className="flex items-center gap-3 p-3 bg-brand-lavender/30 rounded-xl">
               <div className={clsx(
                 'w-12 h-12 rounded-xl flex items-center justify-center text-lg font-black text-white',
@@ -666,7 +705,6 @@ export default function Reflection() {
               </div>
             </div>
 
-            {/* Top Bias */}
             <div className="flex items-center gap-3 p-3 bg-brand-lavender/30 rounded-xl">
               <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center">
                 <Brain className="h-6 w-6 text-amber-600" />
@@ -674,17 +712,11 @@ export default function Reflection() {
               <div>
                 <p className="text-xs text-brand-navy/50 uppercase tracking-wide">Top Bias</p>
                 <p className="text-sm font-semibold text-brand-navy capitalize">
-                  {reflection.patterns_detected?.length > 0
-                    ? reflection.patterns_detected
-                        .slice()
-                        .sort((a, b) => b.confidence - a.confidence)[0]
-                        .pattern_name.replace(/_/g, ' ')
-                    : 'None detected'}
+                  {topBias ? topBias.pattern_name.replace(/_/g, ' ') : 'None detected'}
                 </p>
               </div>
             </div>
 
-            {/* Luck vs Skill */}
             <div className="flex items-center gap-3 p-3 bg-brand-lavender/30 rounded-xl">
               <div className="w-12 h-12 rounded-xl bg-cyan-100 flex items-center justify-center">
                 <Shuffle className="h-6 w-6 text-cyan-600" />
@@ -692,7 +724,7 @@ export default function Reflection() {
               <div>
                 <p className="text-xs text-brand-navy/50 uppercase tracking-wide">Luck / Skill</p>
                 <p className="text-sm font-semibold text-brand-navy">
-                  {Math.round((reflection.luck_factor || 0) * 100)}% / {Math.round((reflection.skill_factor || 0) * 100)}%
+                  {luckPct}% / {skillPct}%
                 </p>
               </div>
             </div>
@@ -709,7 +741,7 @@ export default function Reflection() {
       )}
 
       {/* Full Analysis (expandable) */}
-      {showFullAnalysis && (<>
+      {showFullAnalysis && (<div className="space-y-6 animate-fadeIn">
 
       {/* Process Quality & Luck/Skill */}
       <div className="grid md:grid-cols-2 gap-6">
@@ -1149,7 +1181,7 @@ export default function Reflection() {
         </button>
       </div>
 
-      </>)}
+      </div>)}
 
       {/* Actions */}
       <div className="flex flex-wrap gap-4 justify-center">
@@ -1180,7 +1212,7 @@ export default function Reflection() {
             </button>
 
             {/* The Card */}
-            <div className="rounded-2xl overflow-hidden shadow-2xl border border-brand-blue/30">
+            <div ref={shareCardRef} className="rounded-2xl overflow-hidden shadow-2xl border border-brand-blue/30">
               {/* Card Header */}
               <div className={`p-6 ${isProfit ? 'bg-gradient-to-br from-green-900 to-emerald-800' : 'bg-gradient-to-br from-red-900 to-rose-800'}`}>
                 <div className="flex items-center gap-3 mb-4">
@@ -1243,14 +1275,24 @@ export default function Reflection() {
               </div>
             </div>
 
-            {/* Copy Button */}
-            <button
-              onClick={copyShareText}
-              className="btn btn-primary w-full mt-3 flex items-center justify-center gap-2"
-            >
-              {copied ? <Check className="h-5 w-5" /> : <Copy className="h-5 w-5" />}
-              {copied ? 'Copied to Clipboard!' : 'Copy Results as Text'}
-            </button>
+            {/* Action Buttons */}
+            <div className="flex gap-2 mt-3">
+              <button
+                onClick={saveAsImage}
+                disabled={savingImage}
+                className="btn btn-primary flex-1 flex items-center justify-center gap-2"
+              >
+                <Download className="h-5 w-5" />
+                {savingImage ? 'Saving...' : 'Save as Image'}
+              </button>
+              <button
+                onClick={copyShareText}
+                className="btn btn-secondary flex-1 flex items-center justify-center gap-2"
+              >
+                {copied ? <Check className="h-5 w-5" /> : <Copy className="h-5 w-5" />}
+                {copied ? 'Copied!' : 'Copy Text'}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
@@ -17,7 +17,7 @@ from models.scenario import Scenario
 from models.simulation import Simulation
 from models.decision import Decision
 from models.simulation_snapshot import SimulationSnapshot
-from routers.auth import get_current_user
+from routers.auth import get_current_user, limiter
 from services.simulation_engine import SimulationEngine
 from services.gemini_service import GeminiService
 from schemas.simulation import (
@@ -481,7 +481,9 @@ async def list_simulations(
 # ── Credibility Check (Google Search Grounding) ─────────────────────
 
 @router.post("/verify-credibility")
+@limiter.limit("5/minute")
 async def verify_credibility(
+    request: Request,
     current_user: Annotated[User, Depends(get_current_user)],
     claim: str = "",
     source_type: str = "news",

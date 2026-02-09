@@ -221,10 +221,12 @@ export default function Simulation() {
     };
   }, [scenarioId]);
 
-  // Connect SSE when simulation is running
+  // Connect SSE when simulation is running (with auto-reconnect)
   useEffect(() => {
     if (!simulation || !isRunning) return;
     let cancelled = false;
+    let retryCount = 0;
+    const MAX_RETRIES = 3;
 
     const connectSSE = async () => {
       try {
@@ -233,10 +235,20 @@ export default function Simulation() {
         sseReaderRef.current = reader;
         const decoder = new TextDecoder();
         let buffer = '';
+        retryCount = 0; // reset on successful connect
 
         while (!cancelled) {
           const { done, value } = await reader.read();
-          if (done) break;
+          if (done) {
+            // Stream ended unexpectedly — try to reconnect
+            if (!cancelled && retryCount < MAX_RETRIES) {
+              retryCount++;
+              console.warn(`SSE stream ended, reconnecting (attempt ${retryCount}/${MAX_RETRIES})...`);
+              await new Promise(r => setTimeout(r, 1000 * retryCount));
+              return connectSSE();
+            }
+            break;
+          }
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split('\n');
           buffer = lines.pop();
@@ -266,7 +278,13 @@ export default function Simulation() {
         }
       } catch (err) {
         if (!cancelled) {
-          console.error('SSE failed, polling:', err);
+          if (retryCount < MAX_RETRIES) {
+            retryCount++;
+            console.warn(`SSE connection failed, reconnecting (attempt ${retryCount}/${MAX_RETRIES})...`);
+            await new Promise(r => setTimeout(r, 1000 * retryCount));
+            return connectSSE();
+          }
+          console.error('SSE failed after retries, falling back to polling:', err);
           startPollingFallback();
         }
       }

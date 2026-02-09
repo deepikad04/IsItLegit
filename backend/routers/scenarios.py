@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -11,7 +11,7 @@ from models.user import User
 from models.scenario import Scenario
 from models.simulation import Simulation
 from models.behavior_profile import BehaviorProfile
-from routers.auth import get_current_user
+from routers.auth import get_current_user, limiter
 from schemas.scenario import ScenarioResponse, ScenarioDetailResponse
 
 router = APIRouter(prefix="/api/scenarios", tags=["scenarios"])
@@ -131,7 +131,9 @@ def _check_unlock(scenario: Scenario, completed_sims: list, user: User) -> bool:
 
 
 @router.post("/generate-adaptive")
+@limiter.limit("3/minute")
 async def generate_adaptive_scenario(
+    request: Request,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
 ):
@@ -179,7 +181,9 @@ async def generate_adaptive_scenario(
 
 
 @router.post("/generate-from-url")
+@limiter.limit("3/minute")
 async def generate_scenario_from_url(
+    request: Request,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
     url: str = "",

@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -9,7 +9,7 @@ from database import get_db
 from models.user import User
 from models.simulation import Simulation
 from models.decision import Decision
-from routers.auth import get_current_user
+from routers.auth import get_current_user, limiter
 from models.behavior_profile import BehaviorProfile
 from services.gemini_service import GeminiService
 from schemas.reflection import (
@@ -23,7 +23,9 @@ router = APIRouter(prefix="/api/reflection", tags=["reflection"])
 
 
 @router.get("/{simulation_id}", response_model=ReflectionResponse)
+@limiter.limit("10/minute")
 async def get_reflection(
+    request: Request,
     simulation_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db)
@@ -71,7 +73,9 @@ async def get_reflection(
 
 
 @router.get("/{simulation_id}/counterfactuals", response_model=list[Counterfactual])
+@limiter.limit("10/minute")
 async def get_counterfactuals(
+    request: Request,
     simulation_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db)
@@ -207,7 +211,9 @@ async def _load_completed_simulation(
 
 
 @router.get("/{simulation_id}/why", response_model=WhyThisDecisionResponse)
+@limiter.limit("10/minute")
 async def why_this_decision(
+    request: Request,
     simulation_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db)
@@ -232,7 +238,9 @@ async def why_this_decision(
 
 
 @router.get("/{simulation_id}/pro-comparison")
+@limiter.limit("10/minute")
 async def pro_comparison(
+    request: Request,
     simulation_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db)
@@ -269,7 +277,9 @@ async def pro_comparison(
 
 
 @router.get("/{simulation_id}/coaching")
+@limiter.limit("10/minute")
 async def get_coaching(
+    request: Request,
     simulation_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db)
@@ -332,7 +342,9 @@ async def get_coaching(
 
 
 @router.get("/{simulation_id}/full")
+@limiter.limit("5/minute")
 async def get_full_reflection(
+    request: Request,
     simulation_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -370,7 +382,9 @@ async def get_full_reflection(
 
 
 @router.get("/{simulation_id}/bias-heatmap")
+@limiter.limit("10/minute")
 async def get_bias_heatmap(
+    request: Request,
     simulation_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -397,7 +411,9 @@ async def get_bias_heatmap(
 
 
 @router.get("/{simulation_id}/rationale-review")
+@limiter.limit("10/minute")
 async def review_rationales(
+    request: Request,
     simulation_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -455,7 +471,9 @@ async def get_outcome_distribution(
 
 
 @router.get("/{simulation_id}/counterfactual-isolation")
+@limiter.limit("5/minute")
 async def counterfactual_isolation(
+    request: Request,
     simulation_id: UUID,
     decision_index: int = Query(..., ge=0, description="Which decision to isolate"),
     current_user: Annotated[User, Depends(get_current_user)] = None,

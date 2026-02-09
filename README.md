@@ -251,6 +251,19 @@ docker compose up --build
 - Backend API: http://localhost:8000
 - PostgreSQL: localhost:5432
 
+### Seed Demo Data (optional)
+
+Pre-populate the database with two demo accounts that have full simulation history, AI analysis, and behavior profiles — so you can explore the complete experience immediately:
+
+```bash
+cd backend && python seed_demo.py
+```
+
+| Account | Email | Password | Simulations | Story Arc |
+|---------|-------|----------|-------------|-----------|
+| **demo_trader** | demo@isitlegit.com | demo1234 | 20 sims, 30 days | FOMO losses → patience → contrarian mastery (25 → 88 process score) |
+| **alex_novice** | alex@isitlegit.com | alex1234 | 12 sims, 10 days | Beginner mistakes → slowly improving (28 → 58 process score) |
+
 ### Without Docker
 
 **Backend:**

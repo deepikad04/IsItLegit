@@ -725,7 +725,7 @@ export default function Reflection() {
                     </p>
                     <p className="text-brand-navy/70 text-sm mb-3">{exp.explanation}</p>
                     <div className="space-y-1 mb-3">
-                      {exp.evidence_from_actions.map((e, j) => (
+                      {(exp.evidence_from_actions || []).map((e, j) => (
                         <div key={j} className="flex items-start space-x-2 text-sm text-brand-navy/60">
                           <Eye className="h-3 w-3 text-orange-600 flex-shrink-0 mt-1" />
                           <span>{e}</span>
@@ -828,7 +828,7 @@ export default function Reflection() {
               </div>
 
               {/* Decision-by-decision comparison */}
-              {proData.pro_decisions.map((pd, i) => (
+              {(proData.pro_decisions || []).map((pd, i) => (
                 <div key={i} className="p-4 bg-brand-lavender/30 rounded-lg">
                   <p className="text-brand-navy/60 text-xs mb-2">At t={pd.at_timestamp}s</p>
                   <div className="grid grid-cols-2 gap-4 mb-3">
@@ -928,7 +928,7 @@ export default function Reflection() {
                       <div className="grid grid-cols-3 gap-2">
                         {proData.algorithmic_baseline.rules?.map((r, i) => (
                           <div key={i} className="text-xs p-2 bg-gray-50 rounded border border-gray-200">
-                            <span className="font-medium text-brand-navy">{r.rule.replace(/_/g, ' ')}</span>
+                            <span className="font-medium text-brand-navy">{(r.rule || '').replace(/_/g, ' ')}</span>
                             <p className="text-brand-navy/50 mt-0.5">{r.description}</p>
                           </div>
                         ))}
@@ -988,7 +988,7 @@ export default function Reflection() {
                   b.score > 0.3 ? 'bg-amber-100 text-amber-700' :
                   'bg-gray-100 text-gray-600'
                 )}>
-                  #{b.rank} {b.bias.replace(/_/g, ' ')} ({(b.score * 100).toFixed(0)}%)
+                  #{b.rank} {(b.bias || '').replace(/_/g, ' ')} ({((b.score || 0) * 100).toFixed(0)}%)
                 </div>
               ))}
             </div>
@@ -1019,7 +1019,7 @@ export default function Reflection() {
           {biasClassifier.gemini_comparison && (
             <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
               <p className="text-xs font-semibold text-purple-700 mb-2">
-                Classifier vs AI Agreement: {(biasClassifier.gemini_comparison.agreement_rate * 100).toFixed(0)}%
+                Classifier vs AI Agreement: {((biasClassifier.gemini_comparison.agreement_rate || 0) * 100).toFixed(0)}%
               </p>
               <div className="space-y-1">
                 {biasClassifier.gemini_comparison.details?.map((d, i) => (
@@ -1029,7 +1029,7 @@ export default function Reflection() {
                     ) : (
                       <AlertTriangle className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" />
                     )}
-                    <span className="text-brand-navy/70">{d.bias.replace(/_/g, ' ')}</span>
+                    <span className="text-brand-navy/70">{(d.bias || '').replace(/_/g, ' ')}</span>
                     <span className="text-brand-navy/40 ml-auto">{d.note}</span>
                   </div>
                 ))}
@@ -1041,12 +1041,12 @@ export default function Reflection() {
           {biasClassifier.feature_importance && biasClassifier.top_biases?.[0] && (
             <details className="mt-3 text-xs">
               <summary className="cursor-pointer font-semibold text-brand-navy/70 hover:text-brand-navy">
-                Feature importance for top bias: {biasClassifier.top_biases[0].bias.replace(/_/g, ' ')}
+                Feature importance for top bias: {(biasClassifier.top_biases[0]?.bias || '').replace(/_/g, ' ')}
               </summary>
               <div className="mt-2 space-y-1">
                 {(biasClassifier.feature_importance[biasClassifier.top_biases[0].bias] || []).map(([feat, imp], i) => (
                   <div key={i} className="flex items-center gap-2">
-                    <span className="text-brand-navy/60 w-40">{feat.replace(/_/g, ' ')}</span>
+                    <span className="text-brand-navy/60 w-40">{(feat || '').replace(/_/g, ' ')}</span>
                     <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
                       <div className="h-full bg-purple-400 rounded-full" style={{ width: `${imp * 100}%` }} />
                     </div>
@@ -1087,7 +1087,7 @@ export default function Reflection() {
             {confidenceCalibration.calibrated_patterns?.map((p, i) => (
               <div key={i} className="p-3 bg-brand-lavender/20 rounded-lg">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-brand-navy">{p.pattern.replace(/_/g, ' ')}</span>
+                  <span className="text-sm font-medium text-brand-navy">{(p.pattern || '').replace(/_/g, ' ')}</span>
                   <span className={clsx(
                     'text-xs px-2 py-0.5 rounded-full font-medium',
                     p.confidence_level === 'high' ? 'bg-green-100 text-green-700' :
@@ -1103,13 +1103,13 @@ export default function Reflection() {
                   <div>
                     <p className="text-xs text-brand-navy/50 mb-1">AI confidence</p>
                     <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                      <div className="h-full bg-blue-400 rounded-full" style={{ width: `${p.gemini_confidence * 100}%` }} />
+                      <div className="h-full bg-blue-400 rounded-full" style={{ width: `${(p.gemini_confidence || 0) * 100}%` }} />
                     </div>
                   </div>
                   <div>
                     <p className="text-xs text-brand-navy/50 mb-1">Evidence score</p>
                     <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                      <div className="h-full bg-teal-400 rounded-full" style={{ width: `${p.evidence_score * 100}%` }} />
+                      <div className="h-full bg-teal-400 rounded-full" style={{ width: `${(p.evidence_score || 0) * 100}%` }} />
                     </div>
                   </div>
                 </div>
@@ -1147,8 +1147,8 @@ export default function Reflection() {
                 {confidenceCalibration.abstained_patterns.map((p, i) => (
                   <div key={i} className="flex items-center gap-2 text-xs text-gray-500 mb-1">
                     <HelpCircle className="h-3 w-3 flex-shrink-0" />
-                    <span>{p.pattern.replace(/_/g, ' ')}</span>
-                    <span className="ml-auto">AI said {(p.gemini_confidence * 100).toFixed(0)}% but no evidence found</span>
+                    <span>{(p.pattern || '').replace(/_/g, ' ')}</span>
+                    <span className="ml-auto">AI said {((p.gemini_confidence || 0) * 100).toFixed(0)}% but no evidence found</span>
                   </div>
                 ))}
               </div>

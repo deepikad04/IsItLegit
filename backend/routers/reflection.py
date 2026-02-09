@@ -433,8 +433,13 @@ async def get_full_reflection(
         behavior_profile=profile.profile_data if profile else None,
     )
 
-    # Persist
-    simulation.gemini_analysis = result["reflection"]
+    # Persist — tag with AI source and thinking metadata
+    analysis_data = result["reflection"]
+    if isinstance(analysis_data, dict):
+        analysis_data["_source"] = gemini.current_source
+        if gemini._last_thinking:
+            analysis_data["_thinking"] = gemini._last_thinking
+    simulation.gemini_analysis = analysis_data
     simulation.counterfactuals = result["counterfactuals"]
     db.commit()
 

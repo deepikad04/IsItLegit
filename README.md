@@ -1,6 +1,6 @@
 # IsItLegit
 
-**A simulation-based decision training platform that helps you practice financial decision-making under pressure — and learn from your mistakes with AI-powered feedback.**
+**A simulation-based decision training platform that teaches you how to make better financial decisions through experience, not advice.**
 
 Built with React, FastAPI, PostgreSQL, and Google Gemini.
 

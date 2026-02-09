@@ -29,7 +29,7 @@ const MODULE_ICONS = {
 
 const MODULE_COLOR = {
   bg: 'from-brand-navy to-brand-navy-light',
-  card: 'border-brand-blue/30 bg-brand-cream-dark/30',
+  card: 'border-brand-blue/30 bg-brand-cream-dark',
   badge: 'bg-brand-lavender text-brand-navy',
 };
 

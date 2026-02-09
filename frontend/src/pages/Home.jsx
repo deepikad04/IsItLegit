@@ -55,7 +55,7 @@ export default function Home() {
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pb-16 pt-32 relative w-full">
           <div className="text-center">
             <p className="text-lg md:text-xl text-brand-navy/80 max-w-2xl mx-auto mb-8 font-medium">
-              A simulation-based decision training platform that teaches you how to make better financial decisions through experience, not advice.
+              <strong>A simulation-based decision training platform that teaches you how to make better financial decisions through experience, not advice.</strong>
             </p>
             <nav className="flex flex-col sm:flex-row items-center justify-center gap-4" aria-label="Get started">
               <Link to="/register" className="btn btn-primary text-lg px-10 py-3.5">

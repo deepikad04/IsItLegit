@@ -100,7 +100,8 @@ async def get_profile_summary(
             top_strength=None,
             top_weakness=None,
             recent_trend="stable",
-            simulations_this_week=simulations_this_week
+            simulations_this_week=simulations_this_week,
+            current_streak=current_user.current_streak or 0
         )
 
     profile_data = profile.profile_data
@@ -112,7 +113,8 @@ async def get_profile_summary(
         top_strength=strengths[0] if strengths else None,
         top_weakness=weaknesses[0] if weaknesses else None,
         recent_trend=calculate_trend(profile.improvement_trajectory or []),
-        simulations_this_week=simulations_this_week
+        simulations_this_week=simulations_this_week,
+        current_streak=current_user.current_streak or 0
     )
 
 

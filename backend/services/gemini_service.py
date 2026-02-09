@@ -1,6 +1,7 @@
 """
 Gemini API service — real Gemini calls with structured JSON output,
-retries, timeouts, rate-limit handling, and TTL caching.
+retries, timeouts, rate-limit handling, TTL caching, thinking-level control,
+context caching, Google Search grounding, and URL context support.
 Falls back to deterministic heuristics only when use_mock_gemini=True.
 """
 
@@ -14,7 +15,7 @@ from typing import Any, Optional
 from google import genai
 from google.genai import types as genai_types
 from cachetools import TTLCache
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from config import get_settings
 from models.simulation import Simulation
@@ -37,6 +38,35 @@ settings = get_settings()
 
 # ── Module-level response cache keyed on (simulation_id, call_type) ──────────
 _cache: TTLCache = TTLCache(maxsize=256, ttl=settings.gemini_cache_ttl_seconds)
+
+# ── Context cache store: maps simulation_id → Gemini cached_content name ─────
+_context_cache_store: dict[str, str] = {}
+
+# ── Thinking level presets per call type ──────────────────────────────────────
+# Gemini 3 Pro supports: "low" and "high" only (no medium/minimal).
+# Gemini 3 Flash also supports "minimal" and "medium".
+# We use Pro-compatible values since gemini_model defaults to gemini-3-pro.
+THINKING_LEVELS = {
+    # Live/real-time calls — minimize latency
+    "nudge": "low",
+    "challenge": "low",
+    # Post-sim analysis — low thinking for speed (Pro has no "medium")
+    "reflection": "low",
+    "why": "low",
+    "coaching": "low",
+    "bias_heatmap": "low",
+    "rationale_review": "low",
+    "profile_update": "low",
+    "playbook": "low",
+    "adherence": "low",
+    "learning_modules": "low",
+    # Deep analysis — maximum reasoning depth
+    "counterfactuals": "high",
+    "pro": "high",
+    "batch": "high",
+    "isolate": "high",
+    "adaptive_scenario": "high",
+}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -120,30 +150,60 @@ class GeminiService:
         prompt: str,
         response_schema: type,  # Pydantic model for validation
         cache_key_str: str | None = None,
+        call_type: str = "reflection",
+        use_search_grounding: bool = False,
+        use_url_context: bool = False,
+        cached_content_name: str | None = None,
     ) -> dict:
         """
         Call Gemini with automatic retries, timeout, rate-limit back-off,
-        and Pydantic schema validation of the JSON response.
+        Pydantic schema validation, thinking-level control, optional
+        Google Search grounding, URL context, and optional context caching.
         Returns the validated dict.
         """
-        # Check cache first
+        # Check in-memory cache first
         if cache_key_str and cache_key_str in _cache:
             logger.info("Cache hit for %s", cache_key_str)
             return _cache[cache_key_str]
 
         last_error: Exception | None = None
 
+        # Determine thinking level from call type
+        thinking_level = THINKING_LEVELS.get(call_type, "medium")
+
+        # Build tools list (e.g. Search grounding, URL context)
+        tools = []
+        if use_search_grounding and settings.gemini_enable_search_grounding:
+            tools.append(genai_types.Tool(google_search=genai_types.GoogleSearch()))
+        if use_url_context and settings.gemini_enable_url_context:
+            tools.append(genai_types.Tool(url_context=genai_types.UrlContext()))
+
         for attempt in range(1, self.max_retries + 1):
             try:
+                # Build config
+                config_kwargs = {
+                    "response_mime_type": "application/json",
+                    "temperature": 1.0,  # Gemini 3: keep at 1.0 to avoid looping/degraded reasoning
+                    "thinking_config": genai_types.ThinkingConfig(
+                        thinking_level=thinking_level,
+                    ),
+                }
+                if tools:
+                    config_kwargs["tools"] = tools
+
+                # Use cached_content if available (context caching)
+                generate_kwargs = {
+                    "model": self.model_name,
+                    "contents": prompt,
+                    "config": genai_types.GenerateContentConfig(**config_kwargs),
+                }
+                if cached_content_name:
+                    generate_kwargs["cached_content"] = cached_content_name
+
                 response = await asyncio.wait_for(
                     asyncio.to_thread(
                         self.client.models.generate_content,
-                        model=self.model_name,
-                        contents=prompt,
-                        config=genai_types.GenerateContentConfig(
-                            response_mime_type="application/json",
-                            temperature=0.7,
-                        ),
+                        **generate_kwargs,
                     ),
                     timeout=self.timeout,
                 )
@@ -156,9 +216,28 @@ class GeminiService:
                 validated = response_schema.model_validate(data)
                 result = validated.model_dump()
 
+                # Extract grounding metadata if search grounding was used
+                if use_search_grounding:
+                    grounding = self._extract_grounding_metadata(response)
+                    if grounding:
+                        result["_grounding_metadata"] = grounding
+
+                # Extract URL context metadata if URL context was used
+                if use_url_context:
+                    url_meta = self._extract_url_context_metadata(response)
+                    if url_meta:
+                        result["_url_context_metadata"] = url_meta
+
                 # Cache the result
                 if cache_key_str:
                     _cache[cache_key_str] = result
+
+                # Log thinking level and grounding usage
+                logger.info(
+                    "Gemini call [%s] thinking=%s grounding=%s cached_ctx=%s",
+                    call_type, thinking_level, bool(tools),
+                    bool(cached_content_name),
+                )
 
                 return result
 
@@ -192,6 +271,171 @@ class GeminiService:
             f"Gemini call failed after {self.max_retries} attempts: {last_error}"
         )
 
+    # ── Grounding Metadata Extraction ──────────────────────────────────────
+
+    @staticmethod
+    def _extract_grounding_metadata(response) -> dict | None:
+        """
+        Extract structured grounding metadata from a search-grounded response.
+        Returns dict with grounding_chunks (source URIs) and grounding_supports
+        (text segments linked to sources), or None if no grounding data found.
+
+        See: https://ai.google.dev/gemini-api/docs/grounding/search-suggestions
+        """
+        try:
+            candidate = response.candidates[0] if response.candidates else None
+            if not candidate or not hasattr(candidate, "grounding_metadata"):
+                return None
+
+            gm = candidate.grounding_metadata
+            if not gm:
+                return None
+
+            result = {}
+
+            # Extract search queries used
+            if hasattr(gm, "web_search_queries") and gm.web_search_queries:
+                result["search_queries"] = list(gm.web_search_queries)
+
+            # Extract grounding chunks — source URIs and titles
+            if hasattr(gm, "grounding_chunks") and gm.grounding_chunks:
+                chunks = []
+                for chunk in gm.grounding_chunks:
+                    if hasattr(chunk, "web") and chunk.web:
+                        chunks.append({
+                            "uri": getattr(chunk.web, "uri", ""),
+                            "title": getattr(chunk.web, "title", ""),
+                        })
+                if chunks:
+                    result["grounding_chunks"] = chunks
+
+            # Extract grounding supports — text segments linked to source indices
+            if hasattr(gm, "grounding_supports") and gm.grounding_supports:
+                supports = []
+                for support in gm.grounding_supports:
+                    s = {}
+                    if hasattr(support, "segment") and support.segment:
+                        s["text"] = getattr(support.segment, "text", "")
+                    if hasattr(support, "grounding_chunk_indices"):
+                        s["chunk_indices"] = list(
+                            support.grounding_chunk_indices or []
+                        )
+                    if hasattr(support, "confidence_scores"):
+                        s["confidence_scores"] = [
+                            round(c, 3)
+                            for c in (support.confidence_scores or [])
+                        ]
+                    if s:
+                        supports.append(s)
+                if supports:
+                    result["grounding_supports"] = supports
+
+            # Extract search entry point (rendered HTML for search suggestions)
+            if hasattr(gm, "search_entry_point") and gm.search_entry_point:
+                sep = gm.search_entry_point
+                if hasattr(sep, "rendered_content") and sep.rendered_content:
+                    result["search_suggestion_html"] = sep.rendered_content
+
+            return result if result else None
+
+        except Exception as e:
+            logger.debug("Failed to extract grounding metadata: %s", e)
+            return None
+
+    # ── URL Context Metadata Extraction ────────────────────────────────────
+
+    @staticmethod
+    def _extract_url_context_metadata(response) -> dict | None:
+        """
+        Extract url_context_metadata from a response that used the URL context tool.
+        Returns dict with url_metadata (retrieved URLs and their statuses),
+        or None if no URL context data found.
+        """
+        try:
+            candidate = response.candidates[0] if response.candidates else None
+            if not candidate:
+                return None
+
+            ucm = getattr(candidate, "url_context_metadata", None)
+            if not ucm:
+                return None
+
+            result = {}
+            url_metadata = getattr(ucm, "url_metadata", None)
+            if url_metadata:
+                urls = []
+                for um in url_metadata:
+                    entry = {}
+                    if hasattr(um, "retrieved_url") and um.retrieved_url:
+                        entry["retrieved_url"] = um.retrieved_url
+                    if hasattr(um, "url_retrieval_status") and um.url_retrieval_status:
+                        entry["status"] = str(um.url_retrieval_status)
+                    if entry:
+                        urls.append(entry)
+                if urls:
+                    result["url_metadata"] = urls
+
+            return result if result else None
+
+        except Exception as e:
+            logger.debug("Failed to extract URL context metadata: %s", e)
+            return None
+
+    # ── Context Caching — cache shared scenario+decision prefix ──────────
+
+    async def _get_or_create_context_cache(
+        self,
+        simulation_id: str,
+        scenario: Scenario,
+        decisions: list[Decision],
+    ) -> str | None:
+        """
+        Create or reuse a Gemini context cache containing the scenario summary
+        and decision trace. This prefix is shared across reflection, counterfactuals,
+        why, pro-comparison, coaching, etc. — saving ~5x input tokens.
+        Returns the cached_content name, or None if caching fails.
+        """
+        if self.use_mock or not self.client:
+            return None
+
+        # Return existing cache if available
+        if simulation_id in _context_cache_store:
+            return _context_cache_store[simulation_id]
+
+        shared_prefix = (
+            f"SCENARIO:\n{_scenario_summary(scenario)}\n\n"
+            f"USER'S DECISION TRACE:\n{_decision_trace(decisions)}"
+        )
+
+        # Gemini requires minimum token count for explicit caching:
+        # - Gemini 3 Pro: 4096 tokens, Gemini 3 Flash: 1024 tokens
+        # Rough estimate: ~4 chars per token. Skip caching if prefix is too short.
+        MIN_CHARS_FOR_CACHING = 16000  # ~4096 tokens * 4 chars/token
+        if len(shared_prefix) < MIN_CHARS_FOR_CACHING:
+            logger.info(
+                "Context prefix too short for caching (%d chars < %d min), using inline",
+                len(shared_prefix), MIN_CHARS_FOR_CACHING,
+            )
+            return None
+
+        try:
+            cached_content = await asyncio.to_thread(
+                self.client.caches.create,
+                model=self.model_name,
+                config=genai_types.CreateCachedContentConfig(
+                    contents=[shared_prefix],
+                    ttl=f"{settings.gemini_context_cache_ttl_minutes * 60}s",
+                    display_name=f"sim-{simulation_id[:8]}",
+                ),
+            )
+            cache_name = cached_content.name
+            _context_cache_store[simulation_id] = cache_name
+            logger.info("Created context cache for simulation %s: %s", simulation_id[:8], cache_name)
+            return cache_name
+        except Exception as e:
+            logger.warning("Context cache creation failed (will use inline): %s", e)
+            return None
+
     # ── Pydantic wrapper schemas for Gemini structured output ────────────
     # These define what we ask Gemini to return as JSON.
 
@@ -218,8 +462,16 @@ class GeminiService:
 
         cache_k = _cache_key(str(simulation.id), "reflection")
 
+        # Try to use context caching for shared prefix
+        ctx_name = await self._get_or_create_context_cache(
+            str(simulation.id), scenario, decisions
+        )
+
         try:
-            data = await self._call_gemini(prompt, _ReflectionGeminiOutput, cache_k)
+            data = await self._call_gemini(
+                prompt, _ReflectionGeminiOutput, cache_k,
+                call_type="reflection", cached_content_name=ctx_name,
+            )
             # Merge simulation_id which Gemini doesn't know
             data["simulation_id"] = str(simulation.id)
             data["counterfactuals"] = []  # generated separately
@@ -240,9 +492,15 @@ class GeminiService:
 
         prompt = self._build_counterfactual_prompt(simulation, decisions, scenario)
         cache_k = _cache_key(str(simulation.id), "counterfactuals")
+        ctx_name = await self._get_or_create_context_cache(
+            str(simulation.id), scenario, decisions
+        )
 
         try:
-            data = await self._call_gemini(prompt, _CounterfactualGeminiOutput, cache_k)
+            data = await self._call_gemini(
+                prompt, _CounterfactualGeminiOutput, cache_k,
+                call_type="counterfactuals", cached_content_name=ctx_name,
+            )
             return [Counterfactual.model_validate(cf) for cf in data["counterfactuals"]]
         except Exception as e:
             logger.error("Gemini counterfactuals failed, falling back: %s", e)
@@ -260,9 +518,15 @@ class GeminiService:
 
         prompt = self._build_why_prompt(simulation, decisions, scenario)
         cache_k = _cache_key(str(simulation.id), "why")
+        ctx_name = await self._get_or_create_context_cache(
+            str(simulation.id), scenario, decisions
+        )
 
         try:
-            data = await self._call_gemini(prompt, _WhyGeminiOutput, cache_k)
+            data = await self._call_gemini(
+                prompt, _WhyGeminiOutput, cache_k,
+                call_type="why", cached_content_name=ctx_name,
+            )
             data["simulation_id"] = str(simulation.id)
             return WhyThisDecisionResponse.model_validate(data)
         except Exception as e:
@@ -281,9 +545,15 @@ class GeminiService:
 
         prompt = self._build_pro_prompt(simulation, decisions, scenario)
         cache_k = _cache_key(str(simulation.id), "pro")
+        ctx_name = await self._get_or_create_context_cache(
+            str(simulation.id), scenario, decisions
+        )
 
         try:
-            data = await self._call_gemini(prompt, _ProGeminiOutput, cache_k)
+            data = await self._call_gemini(
+                prompt, _ProGeminiOutput, cache_k,
+                call_type="pro", cached_content_name=ctx_name,
+            )
             data["simulation_id"] = str(simulation.id)
             return ProComparisonResponse.model_validate(data)
         except Exception as e:
@@ -303,9 +573,15 @@ class GeminiService:
 
         prompt = self._build_coaching_prompt(simulation, decisions, scenario, behavior_profile)
         cache_k = _cache_key(str(simulation.id), "coaching")
+        ctx_name = await self._get_or_create_context_cache(
+            str(simulation.id), scenario, decisions
+        )
 
         try:
-            data = await self._call_gemini(prompt, _CoachingGeminiOutput, cache_k)
+            data = await self._call_gemini(
+                prompt, _CoachingGeminiOutput, cache_k,
+                call_type="coaching", cached_content_name=ctx_name,
+            )
             return data["coaching_message"]
         except Exception as e:
             logger.error("Gemini coaching failed, falling back: %s", e)
@@ -327,7 +603,10 @@ class GeminiService:
         cache_k = _cache_key(str(simulation.id), "profile_update")
 
         try:
-            data = await self._call_gemini(prompt, _ProfileUpdateGeminiOutput, cache_k)
+            data = await self._call_gemini(
+                prompt, _ProfileUpdateGeminiOutput, cache_k,
+                call_type="profile_update",
+            )
             return data
         except Exception as e:
             logger.error("Gemini profile update failed, falling back: %s", e)
@@ -350,17 +629,25 @@ class GeminiService:
         if cache_k in _cache:
             return _cache[cache_k]
 
-        prompt = f"""You are a behavioral finance educator creating personalized learning modules.
+        prompt = f"""<role>
+You are a behavioral finance educator creating personalized learning modules.
+</role>
 
-USER'S BEHAVIOR PROFILE:
+<context>
+<user_behavior_profile>
 Strengths: {profile_data.get("strengths", [])}
 Weaknesses: {weaknesses}
 Bias patterns: {bias_patterns}
 Decision style: {profile_data.get("decision_style", "unknown")}
 Total simulations: {profile_data.get("total_simulations_analyzed", 0)}
+</user_behavior_profile>
+</context>
 
-TASK: Create 3-5 learning modules specifically targeting this user's weaknesses and bias patterns. Each module should have 2-3 lessons and 3 quiz questions.
+<task>
+Create 3-5 learning modules specifically targeting this user's weaknesses and bias patterns. Each module should have 2-3 lessons and 3 quiz questions.
+</task>
 
+<output_format>
 Return valid JSON:
 {{
   "modules": [
@@ -389,17 +676,22 @@ Return valid JSON:
     }}
   ]
 }}
+</output_format>
 
-RULES:
+<constraints>
 - Modules MUST directly address the user's specific weaknesses and bias patterns
 - Content should reference real behavioral finance research (Kahneman, Thaler, etc.)
 - Quiz questions should be scenario-based, not factual recall
 - Each lesson should include at least one concrete technique the user can apply
 - Don't repeat content from standard modules about emotional intelligence, risk management, social media, or confidence calibration
-- Make content personal — reference the user's specific patterns where possible"""
+- Make content personal — reference the user's specific patterns where possible
+</constraints>"""
 
         try:
-            data = await self._call_gemini(prompt, _GeneratedModulesGeminiOutput, cache_k)
+            data = await self._call_gemini(
+                prompt, _GeneratedModulesGeminiOutput, cache_k,
+                call_type="learning_modules",
+            )
             return data["modules"]
         except Exception as e:
             logger.error("Learning module generation failed, falling back: %s", e)
@@ -449,21 +741,32 @@ RULES:
 
     def _build_reflection_prompt(self, simulation, decisions, scenario) -> str:
         outcome = simulation.final_outcome or {}
-        return f"""You are a behavioral finance expert analyzing a user's investment simulation decisions.
+        return f"""<role>
+You are a behavioral finance expert analyzing a user's investment simulation decisions.
+You are precise, evidence-based, and focused on decision PROCESS over outcomes.
+</role>
 
-SCENARIO:
+<context>
+<scenario>
 {_scenario_summary(scenario)}
+</scenario>
 
-USER'S DECISION TRACE:
+<decision_trace>
 {_decision_trace(decisions)}
+</decision_trace>
 
-OUTCOME:
+<outcome>
 Profit/Loss: ${outcome.get("profit_loss", 0):.2f}
 Final Portfolio Value: ${outcome.get("final_value", 10000):.2f}
 Process Quality Score (heuristic): {simulation.process_quality_score or 'N/A'}
+</outcome>
+</context>
 
-TASK: Analyze the user's decision-making PROCESS, not just the outcome.
+<task>
+Analyze the user's decision-making PROCESS, not just the outcome.
+</task>
 
+<output_format>
 Return valid JSON matching this exact schema:
 {{
   "outcome_summary": "+$X.XX" or "-$X.XX",
@@ -495,28 +798,41 @@ Return valid JSON matching this exact schema:
   "key_takeaway": "the single most important lesson from this simulation",
   "coaching_message": "a personalized, encouraging coaching message addressing the user directly"
 }}
+</output_format>
 
-RULES:
+<constraints>
 - Every claim MUST cite specific evidence from the decision trace (decision number, timing, actions).
 - If you are not confident about a pattern, set confidence below 0.5.
 - Do NOT invent evidence. If the trace doesn't support a pattern, don't include it.
 - The coaching message should be warm but honest, addressing the user's specific behavior.
-- Focus on PROCESS quality, not outcome. A profitable simulation with poor process should score low."""
+- Focus on PROCESS quality, not outcome. A profitable simulation with poor process should score low.
+</constraints>"""
 
     def _build_counterfactual_prompt(self, simulation, decisions, scenario) -> str:
         outcome = simulation.final_outcome or {}
-        return f"""You are a behavioral finance expert generating counterfactual "what-if" scenarios.
+        return f"""<role>
+You are a behavioral finance expert generating counterfactual "what-if" scenarios.
+</role>
 
-SCENARIO:
+<context>
+<scenario>
 {_scenario_summary(scenario)}
+</scenario>
 
-USER'S ACTUAL DECISIONS:
+<decision_trace>
 {_decision_trace(decisions)}
+</decision_trace>
 
-ACTUAL OUTCOME: ${outcome.get("profit_loss", 0):.2f}
+<actual_outcome>
+Profit/Loss: ${outcome.get("profit_loss", 0):.2f}
+</actual_outcome>
+</context>
 
-TASK: Generate 3 alternate timelines where the SAME user decisions play out under DIFFERENT market conditions. Each must be plausible given the scenario category.
+<task>
+Generate 3 alternate timelines where the SAME user decisions play out under DIFFERENT market conditions. Each must be plausible given the scenario category.
+</task>
 
+<output_format>
 Return valid JSON:
 {{
   "counterfactuals": [
@@ -529,26 +845,39 @@ Return valid JSON:
     }}
   ]
 }}
+</output_format>
 
-RULES:
+<constraints>
 - Each timeline must reference the user's SPECIFIC decisions and show how they would play out differently.
 - Outcomes must be numerically plausible given the starting balance of ${outcome.get("final_value", 10000):.0f}.
-- Lessons must be specific, not generic. Reference actual decision numbers or timings from the trace."""
+- Lessons must be specific, not generic. Reference actual decision numbers or timings from the trace.
+</constraints>"""
 
     def _build_why_prompt(self, simulation, decisions, scenario) -> str:
         outcome = simulation.final_outcome or {}
-        return f"""You are a behavioral psychologist analyzing investment decisions.
+        return f"""<role>
+You are a behavioral psychologist analyzing investment decisions.
+</role>
 
-SCENARIO:
+<context>
+<scenario>
 {_scenario_summary(scenario)}
+</scenario>
 
-USER'S DECISION TRACE:
+<decision_trace>
 {_decision_trace(decisions)}
+</decision_trace>
 
-OUTCOME: ${outcome.get("profit_loss", 0):.2f}
+<outcome>
+Profit/Loss: ${outcome.get("profit_loss", 0):.2f}
+</outcome>
+</context>
 
-TASK: For each decision that shows a cognitive bias or notable pattern, explain WHY the user likely made that decision based on the available evidence (timing, information viewed, market conditions, events).
+<task>
+For each decision that shows a cognitive bias or notable pattern, explain WHY the user likely made that decision based on the available evidence (timing, information viewed, market conditions, events).
+</task>
 
+<output_format>
 Return valid JSON:
 {{
   "explanations": [
@@ -564,27 +893,40 @@ Return valid JSON:
   ],
   "overall_narrative": "A cohesive 2-3 sentence story of the user's emotional and cognitive journey through the simulation"
 }}
+</output_format>
 
-RULES:
+<constraints>
 - Only include decisions that clearly show a pattern. Skip unremarkable decisions.
 - Explanations must reference SPECIFIC data: timing, information panels viewed/ignored, confidence levels, events that occurred.
 - The overall_narrative should read like a story, not a list.
-- If a decision was genuinely good, say so. Don't force bias detection."""
+- If a decision was genuinely good, say so. Don't force bias detection.
+</constraints>"""
 
     def _build_pro_prompt(self, simulation, decisions, scenario) -> str:
         outcome = simulation.final_outcome or {}
-        return f"""You are modeling what an experienced, disciplined professional trader would do in this scenario.
+        return f"""<role>
+You are modeling what an experienced, disciplined professional trader would do in this scenario.
+</role>
 
-SCENARIO:
+<context>
+<scenario>
 {_scenario_summary(scenario)}
+</scenario>
 
-USER'S ACTUAL DECISIONS:
+<decision_trace>
 {_decision_trace(decisions)}
+</decision_trace>
 
-USER'S OUTCOME: ${outcome.get("profit_loss", 0):.2f}
+<user_outcome>
+Profit/Loss: ${outcome.get("profit_loss", 0):.2f}
+</user_outcome>
+</context>
 
-TASK: Generate a professional trader's alternative decision path for this exact scenario. The pro has the same information access as the user but uses disciplined analysis.
+<task>
+Generate a professional trader's alternative decision path for this exact scenario. The pro has the same information access as the user but uses disciplined analysis.
+</task>
 
+<output_format>
 Return valid JSON:
 {{
   "pro_decisions": [
@@ -602,12 +944,14 @@ Return valid JSON:
   "key_differences": ["list of 2-3 key behavioral differences"],
   "what_to_practice": ["specific skills the user should develop"]
 }}
+</output_format>
 
-RULES:
+<constraints>
 - The pro's decisions must be realistic for the scenario — no hindsight bias. The pro only knows what was available at each timestamp.
 - Pro outcomes should be plausible, not guaranteed profits. Pros manage risk, they don't predict perfectly.
 - Each pro_decision must contrast with a specific user decision at a similar timestamp.
-- Skills demonstrated should be concrete and learnable, not vague."""
+- Skills demonstrated should be concrete and learnable, not vague.
+</constraints>"""
 
     def _build_coaching_prompt(self, simulation, decisions, scenario, profile) -> str:
         outcome = simulation.final_outcome or {}
@@ -622,48 +966,71 @@ Bias patterns: {profile.get("bias_patterns", {})}
 Decision style: {profile.get("decision_style", "unknown")}
 Total simulations analyzed: {profile.get("total_simulations_analyzed", 0)}
 """
-        return f"""You are a behavioral coach for an investor-in-training.
+        return f"""<role>
+You are a behavioral coach for an investor-in-training.
 {persona_instruction}
+</role>
 
-SCENARIO:
+<context>
+<scenario>
 {_scenario_summary(scenario)}
+</scenario>
 
-THIS SESSION'S DECISIONS:
+<decision_trace>
 {_decision_trace(decisions)}
+</decision_trace>
 
-OUTCOME: ${outcome.get("profit_loss", 0):.2f}
+<outcome>
+Profit/Loss: ${outcome.get("profit_loss", 0):.2f}
+</outcome>
 {profile_str}
-TASK: Write a personalized coaching message (3-5 sentences). Address the user directly as "you".
+</context>
 
+<task>
+Write a personalized coaching message (3-5 sentences). Address the user directly as "you".
+</task>
+
+<output_format>
 Return valid JSON:
 {{
   "coaching_message": "your personalized coaching message here",
   "persona": "{persona}"
 }}
+</output_format>
 
-RULES:
+<constraints>
 - If the user has a behavior profile, reference specific improvements or recurring patterns.
 - Match the {persona} persona tone consistently.
 - Give ONE specific thing they should try in their next simulation.
 - If they improved on a known weakness, acknowledge the progress.
-- Keep it conversational and human. No bullet points, no jargon."""
+- Keep it conversational and human. No bullet points, no jargon.
+</constraints>"""
 
     def _build_profile_prompt(self, simulation, decisions, scenario, existing_profile) -> str:
         outcome = simulation.final_outcome or {}
         existing_str = json.dumps(existing_profile or {}, indent=2)
-        return f"""You are maintaining a compressed behavioral profile for an investor-in-training.
+        return f"""<role>
+You are maintaining a compressed behavioral profile for an investor-in-training.
+</role>
 
-EXISTING PROFILE:
+<context>
+<existing_profile>
 {existing_str}
+</existing_profile>
 
-NEW SIMULATION DATA:
+<new_simulation>
 Scenario: {scenario.name} (Category: {scenario.category})
 Decisions: {_decision_trace(decisions)}
 Outcome: ${outcome.get("profit_loss", 0):.2f}
 Process Quality: {simulation.process_quality_score or 'N/A'}
+</new_simulation>
+</context>
 
-TASK: Update the behavior profile by integrating observations from this new simulation. Compress the information — don't simply append.
+<task>
+Update the behavior profile by integrating observations from this new simulation. Compress the information — don't simply append.
+</task>
 
+<output_format>
 Return valid JSON:
 {{
   "strengths": ["list of identified strengths"],
@@ -673,12 +1040,14 @@ Return valid JSON:
   "stress_response": "impulsive" | "cautious" | "steady",
   "improvement_notes": "what changed from the previous profile, if anything"
 }}
+</output_format>
 
-RULES:
+<constraints>
 - Bias scores should be running averages, not just from this session.
 - If this is the first simulation, establish baseline scores.
 - If a previous weakness improved, lower its score but note the improvement.
-- Be conservative with changes — one simulation shouldn't drastically alter the profile."""
+- Be conservative with changes — one simulation shouldn't drastically alter the profile.
+</constraints>"""
 
     # ── HEURISTIC FALLBACKS (used when mock=True or Gemini fails) ────────
 
@@ -1151,17 +1520,35 @@ RULES:
         if self.use_mock or not self.client:
             return self._heuristic_nudge(dominant, worst)
 
-        prompt = f"""You are a real-time trading coach. The user just made a decision that shows signs of {dominant} bias.
+        prompt = f"""<role>
+You are a real-time trading coach.
+</role>
 
-Context: {worst['evidence']}
+<context>
+The user just made a decision that shows signs of {dominant} bias.
+Evidence: {worst['evidence']}
 Time: {current_time}s into simulation
+</context>
 
+<task>
 Write ONE sentence of coaching (max 20 words). Be direct, specific, and actionable. No jargon.
+</task>
 
-Return JSON: {{"message": "your coaching nudge", "bias": "{dominant}"}}"""
+<output_format>
+Return JSON: {{"message": "your coaching nudge", "bias": "{dominant}"}}
+</output_format>
+
+<constraints>
+- Maximum 20 words
+- Be direct, specific, and actionable
+- No jargon
+</constraints>"""
 
         try:
-            data = await self._call_gemini(prompt, _LiveNudgeOutput, None)
+            data = await self._call_gemini(
+                prompt, _LiveNudgeOutput, None,
+                call_type="nudge",
+            )
             return data
         except Exception as e:
             logger.warning("Live nudge Gemini failed: %s", e)
@@ -1196,21 +1583,48 @@ Return JSON: {{"message": "your coaching nudge", "bias": "{dominant}"}}"""
         if self.use_mock or not self.client:
             return self._heuristic_challenge(decision_type, amount, rationale, current_state)
 
-        prompt = f"""You are a trading coach evaluating reasoning BEFORE a decision is made.
+        prompt = f"""<role>
+You are a trading coach evaluating reasoning BEFORE a decision is made.
+</role>
 
-SCENARIO: {_scenario_summary(scenario)}
-CURRENT STATE: Price=${current_state.get('current_price', 0):.2f}, Sentiment={current_state.get('available_info', {}).get('market_sentiment', 'unknown')}
-PREVIOUS DECISIONS: {_decision_trace(decisions_so_far) if decisions_so_far else 'None yet'}
+<context>
+<scenario>
+{_scenario_summary(scenario)}
+</scenario>
 
-PROPOSED DECISION: {decision_type.upper()} {f'${amount}' if amount else ''}
-USER'S REASONING: "{rationale}"
+<current_state>
+Price: ${current_state.get('current_price', 0):.2f}
+Sentiment: {current_state.get('available_info', {}).get('market_sentiment', 'unknown')}
+</current_state>
 
+<previous_decisions>
+{_decision_trace(decisions_so_far) if decisions_so_far else 'None yet'}
+</previous_decisions>
+
+<proposed_decision>
+Action: {decision_type.upper()} {f'${amount}' if amount else ''}
+User's reasoning: "{rationale}"
+</proposed_decision>
+</context>
+
+<task>
 Rate the reasoning quality 1-5 and give ONE sentence of feedback.
+</task>
 
-Return JSON: {{"reasoning_score": 1-5, "feedback": "one sentence"}}"""
+<output_format>
+Return JSON: {{"reasoning_score": 1-5, "feedback": "one sentence"}}
+</output_format>
+
+<constraints>
+- Score based on analytical depth, not whether the decision is correct
+- Feedback must be exactly one sentence
+</constraints>"""
 
         try:
-            return await self._call_gemini(prompt, _ChallengeOutput, None)
+            return await self._call_gemini(
+                prompt, _ChallengeOutput, None,
+                call_type="challenge",
+            )
         except Exception as e:
             logger.warning("Challenge Gemini failed: %s", e)
             return self._heuristic_challenge(decision_type, amount, rationale, current_state)
@@ -1243,16 +1657,17 @@ Return JSON: {{"reasoning_score": 1-5, "feedback": "one sentence"}}"""
         if self.use_mock or not self.client:
             return self._heuristic_adaptive_scenario(profile_data)
 
-        prompt = f"""You are designing a trading simulation scenario to train a specific cognitive weakness.
+        prompt = f"""<role>
+You are designing a trading simulation scenario to train a specific cognitive weakness.
+</role>
 
-USER'S BEHAVIOR PROFILE:
+<context>
+<user_behavior_profile>
 {json.dumps(profile_data, indent=2)}
+</user_behavior_profile>
 
-TASK: Create a scenario that specifically targets the user's weakest area. The scenario should create situations where their dominant bias will be tested. Use a difficulty between 2-4 based on the user's experience level.
-
-IMPORTANT: Include a "market_params" object in initial_data to enable realistic market features. Choose features that make sense for the scenario's difficulty and target bias. Here are ALL available features:
-
-MARKET REALISM FEATURES (pick appropriate ones for the difficulty):
+<market_realism_features>
+Available features (pick appropriate ones for the difficulty):
 - Transaction costs: "fixed_fee": 1.50, "pct_fee": 0.001 (commission per trade)
 - Bid-ask spread: "base_spread_pct": 0.003 (wider = less liquid market)
 - Liquidity constraints: "avg_volume": 500, "max_trade_size": 300 (limits order fills)
@@ -1268,7 +1683,14 @@ MARKET REALISM FEATURES (pick appropriate ones for the difficulty):
 For difficulty 2: use 3-4 features (spread, news latency, crowd model)
 For difficulty 3: use 5-7 features (add volatility, halts, order types, fees)
 For difficulty 4: use 8-10 features (add margin, liquidity, correlated assets)
+</market_realism_features>
+</context>
 
+<task>
+Create a scenario that specifically targets the user's weakest area. The scenario should create situations where their dominant bias will be tested. Use a difficulty between 2-4 based on the user's experience level. Include a "market_params" object in initial_data to enable realistic market features. Choose features that make sense for the scenario's difficulty and target bias.
+</task>
+
+<output_format>
 Return valid JSON:
 {{
   "name": "Creative scenario name (max 50 chars)",
@@ -1296,11 +1718,20 @@ Return valid JSON:
   ],
   "target_bias": "the bias this scenario tests"
 }}
+</output_format>
 
-Create 6-8 events spread across the timeline. Include at least 2 price events, 2 news events, and 2 social events."""
+<constraints>
+- Create 6-8 events spread across the timeline
+- Include at least 2 price events, 2 news events, and 2 social events
+- Difficulty should be between 2-4 based on the user's experience level
+- Scenario should create situations where the user's dominant bias will be tested
+</constraints>"""
 
         try:
-            return await self._call_gemini(prompt, _AdaptiveScenarioOutput, None)
+            return await self._call_gemini(
+                prompt, _AdaptiveScenarioOutput, None,
+                call_type="adaptive_scenario",
+            )
         except Exception as e:
             logger.error("Adaptive scenario generation failed: %s", e)
             return self._heuristic_adaptive_scenario(profile_data)
@@ -1605,9 +2036,15 @@ Create 6-8 events spread across the timeline. Include at least 2 price events, 2
 
         prompt = self._build_batch_prompt(simulation, decisions, scenario, behavior_profile)
         cache_k = _cache_key(str(simulation.id), "batch")
+        ctx_name = await self._get_or_create_context_cache(
+            str(simulation.id), scenario, decisions
+        )
 
         try:
-            data = await self._call_gemini(prompt, _BatchAnalysisGeminiOutput, cache_k)
+            data = await self._call_gemini(
+                prompt, _BatchAnalysisGeminiOutput, cache_k,
+                call_type="batch", cached_content_name=ctx_name,
+            )
             reflection_data = {
                 "simulation_id": str(simulation.id),
                 "outcome_summary": data["outcome_summary"],
@@ -1644,18 +2081,30 @@ Create 6-8 events spread across the timeline. Include at least 2 price events, 2
         if profile:
             profile_str = f"\nUSER'S BEHAVIOR PROFILE:\n{json.dumps(profile, indent=2)}\n"
 
-        return f"""You are a behavioral finance expert. Analyze this simulation comprehensively.
+        return f"""<role>
+You are a behavioral finance expert analyzing a trading simulation comprehensively.
+</role>
 
-SCENARIO:
+<context>
+<scenario>
 {_scenario_summary(scenario)}
+</scenario>
 
-USER'S DECISION TRACE:
+<decision_trace>
 {_decision_trace(decisions)}
+</decision_trace>
 
-OUTCOME: ${outcome.get("profit_loss", 0):.2f} | Final Value: ${outcome.get("final_value", 10000):.2f}
+<outcome>
+Profit/Loss: ${outcome.get("profit_loss", 0):.2f} | Final Value: ${outcome.get("final_value", 10000):.2f}
+</outcome>
 {profile_str}
-TASK: Provide a COMPLETE analysis in a single response covering: reflection, counterfactuals, and coaching.
+</context>
 
+<task>
+Provide a COMPLETE analysis in a single response covering: reflection, counterfactuals, and coaching.
+</task>
+
+<output_format>
 Return valid JSON matching this schema:
 {{
   "outcome_summary": "+$X.XX" or "-$X.XX",
@@ -1672,8 +2121,13 @@ Return valid JSON matching this schema:
     {{"timeline_name": "string", "description": "string", "market_changes": "string", "outcome": {{"profit_loss": number, "final_value": number}}, "lesson": "string"}}
   ]
 }}
+</output_format>
 
-Generate exactly 3 counterfactuals. All evidence must cite specific decision numbers and timings."""
+<constraints>
+- Generate exactly 3 counterfactuals
+- All evidence must cite specific decision numbers and timings
+- Focus on PROCESS quality, not just outcome
+</constraints>"""
 
     # ── BIAS HEATMAP ─────────────────────────────────────────────────
 
@@ -1689,22 +2143,47 @@ Generate exactly 3 counterfactuals. All evidence must cite specific decision num
 
         prompt = self._build_bias_heatmap_prompt(simulation, decisions, scenario)
         cache_k = _cache_key(str(simulation.id), "bias_heatmap")
+        ctx_name = await self._get_or_create_context_cache(
+            str(simulation.id), scenario, decisions
+        )
 
         try:
-            return await self._call_gemini(prompt, _BiasHeatmapGeminiOutput, cache_k)
+            return await self._call_gemini(
+                prompt, _BiasHeatmapGeminiOutput, cache_k,
+                call_type="bias_heatmap", cached_content_name=ctx_name,
+            )
         except Exception as e:
             logger.error("Bias heatmap failed, falling back: %s", e)
             return self._heuristic_bias_heatmap(decisions)
 
     def _build_bias_heatmap_prompt(self, simulation, decisions, scenario) -> str:
-        return f"""You are analyzing decision-making biases across time.
+        return f"""<role>
+You are analyzing decision-making biases across time in a trading simulation.
+</role>
 
-SCENARIO: {_scenario_summary(scenario)}
-DECISIONS: {_decision_trace(decisions)}
+<context>
+<scenario>
+{_scenario_summary(scenario)}
+</scenario>
 
+<decisions>
+{_decision_trace(decisions)}
+</decisions>
+</context>
+
+<task>
+Analyze EVERY decision for these biases: fomo, impulsivity, loss_aversion, overconfidence, anchoring, social_proof_reliance. Set score to 0 if not present.
+</task>
+
+<output_format>
 Return JSON: {{"timeline": [{{"timestamp_seconds": int, "decision_index": int, "biases": {{"bias_name": 0-1}}, "evidence": "string", "intensity": "low"|"medium"|"high"}}], "peak_bias_moment": int, "dominant_bias": "string"}}
+</output_format>
 
-Analyze EVERY decision for these biases: fomo, impulsivity, loss_aversion, overconfidence, anchoring, social_proof_reliance. Set score to 0 if not present."""
+<constraints>
+- Every decision must be analyzed, even if no bias is detected
+- Set bias scores to 0 if not present
+- Evidence must reference specific decision data (timing, action, market conditions)
+</constraints>"""
 
     def _heuristic_bias_heatmap(self, decisions: list[Decision]) -> dict:
         timeline = []
@@ -1791,9 +2270,15 @@ Analyze EVERY decision for these biases: fomo, impulsivity, loss_aversion, overc
 
         prompt = self._build_rationale_prompt(simulation, decisions, scenario)
         cache_k = _cache_key(str(simulation.id), "rationale_review")
+        ctx_name = await self._get_or_create_context_cache(
+            str(simulation.id), scenario, decisions
+        )
 
         try:
-            return await self._call_gemini(prompt, _RationaleReviewOutput, cache_k)
+            return await self._call_gemini(
+                prompt, _RationaleReviewOutput, cache_k,
+                call_type="rationale_review", cached_content_name=ctx_name,
+            )
         except Exception as e:
             logger.error("Rationale review failed, falling back: %s", e)
             return self._heuristic_rationale_review(decisions)
@@ -1803,16 +2288,37 @@ Analyze EVERY decision for these biases: fomo, impulsivity, loss_aversion, overc
         for i, d in enumerate(decisions):
             if d.rationale:
                 rationales.append(f"Decision #{i+1} ({d.decision_type}): \"{d.rationale}\"")
-        return f"""You are a behavioral coach evaluating an investor's stated reasoning.
+        return f"""<role>
+You are a behavioral coach evaluating an investor's stated reasoning.
+</role>
 
-SCENARIO: {_scenario_summary(scenario)}
-DECISIONS: {_decision_trace(decisions)}
-USER'S RATIONALES:
+<context>
+<scenario>
+{_scenario_summary(scenario)}
+</scenario>
+
+<decisions>
+{_decision_trace(decisions)}
+</decisions>
+
+<user_rationales>
 {chr(10).join(rationales)}
+</user_rationales>
+</context>
 
+<task>
+Critique each rationale for analytical quality. Identify specific factors the user missed (data, contrary signals, risk assessment).
+</task>
+
+<output_format>
 Return JSON: {{"reviews": [{{"decision_index": int, "user_rationale": "string", "critique": "string", "quality_score": 1-5, "missed_factors": ["strings"], "reasoning_bias": "string or null"}}], "summary": "string", "overall_reasoning_quality": 1-5}}
+</output_format>
 
-Score quality: 5=exceptional reasoning, 1=emotional/no reasoning. Identify specific factors they missed (data, contrary signals, risk assessment)."""
+<constraints>
+- Score quality: 5=exceptional reasoning, 1=emotional/no reasoning
+- Identify specific factors they missed (data, contrary signals, risk assessment)
+- Critiques must reference the actual scenario context and market conditions
+</constraints>"""
 
     def _heuristic_rationale_review(self, decisions: list[Decision]) -> dict:
         reviews = []
@@ -1874,19 +2380,47 @@ Score quality: 5=exceptional reasoning, 1=emotional/no reasoning. Identify speci
             return self._heuristic_isolate_counterfactual(simulation, decisions, scenario, target_decision_index)
 
         target = decisions[target_decision_index]
-        prompt = f"""You are analyzing the causal impact of changing ONE decision in an investment simulation.
+        prompt = f"""<role>
+You are analyzing the causal impact of changing ONE decision in an investment simulation.
+</role>
 
-SCENARIO: {_scenario_summary(scenario)}
-ALL DECISIONS: {_decision_trace(decisions)}
-TARGET DECISION: #{target_decision_index + 1} — {target.decision_type} at t={target.simulation_time}s
+<context>
+<scenario>
+{_scenario_summary(scenario)}
+</scenario>
 
-TASK: What would happen if ONLY this decision changed (to the opposite action)?
+<all_decisions>
+{_decision_trace(decisions)}
+</all_decisions>
 
-Return JSON: {{"original_decision": "string", "alternative_decision": "string", "ripple_effects": ["strings"], "original_outcome": {{"profit_loss": number, "final_value": number}}, "alternative_outcome": {{"profit_loss": number, "final_value": number}}, "causal_impact": number, "lesson": "string"}}"""
+<target_decision>
+Decision #{target_decision_index + 1} — {target.decision_type} at t={target.simulation_time}s
+</target_decision>
+</context>
+
+<task>
+What would happen if ONLY this decision changed (to the opposite action)? Trace the ripple effects through subsequent decisions and the final outcome.
+</task>
+
+<output_format>
+Return JSON: {{"original_decision": "string", "alternative_decision": "string", "ripple_effects": ["strings"], "original_outcome": {{"profit_loss": number, "final_value": number}}, "alternative_outcome": {{"profit_loss": number, "final_value": number}}, "causal_impact": number, "lesson": "string"}}
+</output_format>
+
+<constraints>
+- Only change the target decision; keep all other decisions the same
+- Ripple effects must be logically plausible given the scenario timeline
+- The lesson must be specific to this decision, not generic advice
+</constraints>"""
 
         cache_k = _cache_key(str(simulation.id), f"isolate_{target_decision_index}")
+        ctx_name = await self._get_or_create_context_cache(
+            str(simulation.id), scenario, decisions
+        )
         try:
-            return await self._call_gemini(prompt, _IsolatedCounterfactualOutput, cache_k)
+            return await self._call_gemini(
+                prompt, _IsolatedCounterfactualOutput, cache_k,
+                call_type="isolate", cached_content_name=ctx_name,
+            )
         except Exception as e:
             logger.error("Counterfactual isolation failed: %s", e)
             return self._heuristic_isolate_counterfactual(simulation, decisions, scenario, target_decision_index)
@@ -1966,17 +2500,35 @@ Return JSON: {{"original_decision": "string", "alternative_decision": "string", 
         if self.use_mock or not self.client:
             return self._heuristic_playbook(profile_data)
 
-        prompt = f"""You are generating a personal trading playbook based on behavioral analysis.
+        prompt = f"""<role>
+You are generating a personal trading playbook based on behavioral analysis.
+</role>
 
-BEHAVIOR PROFILE:
+<context>
+<behavior_profile>
 {json.dumps(profile_data, indent=2)}
+</behavior_profile>
+</context>
 
+<task>
+Create a personalized do/don't playbook with specific rules tailored to this user's behavioral patterns.
+</task>
+
+<output_format>
 Return JSON: {{"dos": ["3-5 specific things to do"], "donts": ["3-5 specific things to avoid"], "key_rules": ["2-3 personal rules"], "generated_from": {profile_data.get("total_simulations_analyzed", 1)}}}
+</output_format>
 
-Rules must be specific to THIS user's patterns, not generic advice."""
+<constraints>
+- Rules must be specific to THIS user's patterns, not generic advice
+- Reference the user's actual bias patterns and weaknesses
+- Keep rules actionable and measurable
+</constraints>"""
 
         try:
-            return await self._call_gemini(prompt, _PlaybookOutput, "playbook")
+            return await self._call_gemini(
+                prompt, _PlaybookOutput, "playbook",
+                call_type="playbook",
+            )
         except Exception as e:
             logger.error("Playbook generation failed: %s", e)
             return self._heuristic_playbook(profile_data)
@@ -1986,20 +2538,42 @@ Rules must be specific to THIS user's patterns, not generic advice."""
         if self.use_mock or not self.client:
             return self._heuristic_adherence(playbook, decisions)
 
-        prompt = f"""Check if the user followed their personal trading playbook.
+        prompt = f"""<role>
+You are a trading coach checking playbook adherence after a simulation.
+</role>
 
-PLAYBOOK:
+<context>
+<playbook>
 DOs: {playbook.get("dos", [])}
 DON'Ts: {playbook.get("donts", [])}
-RULES: {playbook.get("key_rules", [])}
+Rules: {playbook.get("key_rules", [])}
+</playbook>
 
-DECISIONS: {_decision_trace(decisions)}
+<decisions>
+{_decision_trace(decisions)}
+</decisions>
+</context>
 
-Return JSON: {{"adherence_score": 0-100, "followed": ["rules that were followed"], "violated": ["rules that were violated"], "specific_examples": ["evidence from decisions"]}}"""
+<task>
+Check if the user followed their personal trading playbook. Identify which rules were followed and which were violated, with specific evidence from the decisions.
+</task>
+
+<output_format>
+Return JSON: {{"adherence_score": 0-100, "followed": ["rules that were followed"], "violated": ["rules that were violated"], "specific_examples": ["evidence from decisions"]}}
+</output_format>
+
+<constraints>
+- Every rule in the playbook must be evaluated
+- Specific examples must reference actual decision data (timing, amounts, actions)
+- Score should reflect the proportion of rules followed vs violated
+</constraints>"""
 
         cache_k = _cache_key(str(simulation.id), "adherence")
         try:
-            return await self._call_gemini(prompt, _PlaybookAdherenceOutput, cache_k)
+            return await self._call_gemini(
+                prompt, _PlaybookAdherenceOutput, cache_k,
+                call_type="adherence",
+            )
         except Exception as e:
             logger.error("Adherence check failed: %s", e)
             return self._heuristic_adherence(playbook, decisions)
@@ -2108,11 +2682,242 @@ Return JSON: {{"adherence_score": 0-100, "followed": ["rules that were followed"
         profile["improvement_notes"] = "Updated from latest simulation"
         return profile
 
+    # ── GOOGLE SEARCH GROUNDING — credibility verification ───────────
+
+    async def verify_claim_credibility(
+        self,
+        claim: str,
+        source_type: str = "news",
+    ) -> dict:
+        """
+        Use Google Search grounding to fact-check a news claim or social post.
+        Returns a credibility assessment with grounding sources.
+        """
+        if self.use_mock or not self.client:
+            return self._heuristic_credibility(claim, source_type)
+
+        prompt = f"""<role>
+You are a financial news credibility analyst with access to Google Search.
+</role>
+
+<context>
+<claim>{claim}</claim>
+<source_type>{source_type}</source_type>
+</context>
+
+<task>
+Use Google Search to verify this claim. Check if reputable sources confirm or deny it.
+</task>
+
+<output_format>
+Return valid JSON:
+{{
+  "credibility_score": 0.0-1.0,
+  "verdict": "verified" | "partially_verified" | "unverified" | "likely_false",
+  "supporting_sources": ["list of confirming source names/outlets"],
+  "contradicting_sources": ["list of contradicting source names/outlets"],
+  "key_finding": "one-sentence summary of what search revealed",
+  "risk_level": "low" | "medium" | "high"
+}}
+</output_format>
+
+<constraints>
+- Score 0.9+ only if multiple reputable outlets confirm.
+- Score below 0.3 if no credible sources found or sources contradict.
+- Be specific about which sources you found.
+</constraints>"""
+
+        try:
+            data = await self._call_gemini(
+                prompt, _CredibilityCheckOutput, None,
+                call_type="nudge",  # Low thinking — needs to be fast
+                use_search_grounding=True,
+            )
+
+            # Merge real grounding metadata into response
+            gm = data.pop("_grounding_metadata", None)
+            if gm:
+                # Add real source URLs from grounding chunks
+                chunks = gm.get("grounding_chunks", [])
+                if chunks:
+                    data["grounding_source_urls"] = chunks
+
+                # Add search queries used
+                queries = gm.get("search_queries", [])
+                if queries:
+                    data["search_queries_used"] = queries
+
+            return data
+        except Exception as e:
+            logger.warning("Search grounding credibility check failed: %s", e)
+            return self._heuristic_credibility(claim, source_type)
+
+    def _heuristic_credibility(self, claim: str, source_type: str) -> dict:
+        """Deterministic credibility scoring based on claim characteristics."""
+        claim_lower = claim.lower()
+
+        # Red flags
+        red_flags = ["guaranteed", "moon", "100x", "insider", "secret", "manipulation"]
+        flag_count = sum(1 for flag in red_flags if flag in claim_lower)
+
+        # Credibility indicators
+        credible_signals = ["sec", "filing", "earnings", "quarterly", "official", "reuters", "bloomberg"]
+        credible_count = sum(1 for sig in credible_signals if sig in claim_lower)
+
+        if source_type == "social":
+            base_score = 0.3
+        elif source_type == "news":
+            base_score = 0.6
+        else:
+            base_score = 0.5
+
+        score = max(0.0, min(1.0, base_score + credible_count * 0.15 - flag_count * 0.2))
+
+        if score >= 0.7:
+            verdict = "verified"
+        elif score >= 0.4:
+            verdict = "partially_verified"
+        elif score >= 0.2:
+            verdict = "unverified"
+        else:
+            verdict = "likely_false"
+
+        return {
+            "credibility_score": round(score, 2),
+            "verdict": verdict,
+            "supporting_sources": [],
+            "contradicting_sources": [],
+            "key_finding": f"Heuristic assessment based on {source_type} source characteristics.",
+            "risk_level": "high" if score < 0.3 else ("medium" if score < 0.6 else "low"),
+        }
+
+    # ── URL CONTEXT — generate scenarios from article URLs ───────────
+
+    async def generate_scenario_from_url(
+        self,
+        url: str,
+        difficulty: int = 3,
+    ) -> dict:
+        """
+        Use Gemini URL Context to read an article and generate a trading scenario.
+        The user pastes a URL, Gemini extracts the key facts, and creates a sim.
+        """
+        if self.use_mock or not self.client:
+            return self._heuristic_url_scenario(url, difficulty)
+
+        if not settings.gemini_enable_url_context:
+            return self._heuristic_url_scenario(url, difficulty)
+
+        prompt = f"""<role>
+You are designing a trading simulation scenario based on a real article.
+</role>
+
+<context>
+<article_url>{url}</article_url>
+<target_difficulty>{difficulty}</target_difficulty>
+</context>
+
+<task>
+Read the article at the URL above and extract:
+1. The main company/asset involved
+2. Key claims and events
+3. Market impact potential
+4. Conflicting viewpoints or risks
+
+Then create a simulation scenario where the user must navigate decisions based on events inspired by this article.
+Include "market_params" with appropriate realism features for difficulty {difficulty}.
+</task>
+
+<output_format>
+Return valid JSON:
+{{
+  "name": "Scenario name (max 50 chars)",
+  "description": "2-3 sentence description of the scenario",
+  "category": "fomo_trap" | "loss_aversion" | "risk_management" | "social_proof" | "patience_test",
+  "difficulty": {difficulty},
+  "time_pressure_seconds": 120-240,
+  "source_url": "{url}",
+  "source_summary": "2-3 sentence summary of the article",
+  "initial_data": {{
+    "asset": "TICKER (fictional, inspired by article)",
+    "price": 10-500,
+    "your_balance": 10000,
+    "market_sentiment": "bullish" | "bearish" | "neutral",
+    "market_params": {{
+      "fixed_fee": 1.50,
+      "pct_fee": 0.001,
+      "base_spread_pct": 0.003,
+      "volatility_clustering": true,
+      "vol_params": {{"base_vol": 0.02, "persistence": 0.90, "shock_probability": 0.02, "shock_multiplier": 3.0}}
+    }}
+  }},
+  "events": [
+    {{"time": 10, "type": "news"|"social"|"price", "content": "string", "change": null}},
+    ...6-8 events spread across the timeline
+  ]
+}}
+</output_format>
+
+<constraints>
+- Events should mirror the real article's narrative arc (buildup, climax, resolution)
+- Include at least 2 conflicting signals to test decision-making
+- Asset ticker should be fictional (not the real company)
+- Scenario should be playable in 2-4 minutes
+</constraints>"""
+
+        try:
+            data = await self._call_gemini(
+                prompt, _URLScenarioOutput, None,
+                call_type="adaptive_scenario",
+                use_url_context=True,
+            )
+
+            # Merge URL context metadata (retrieval statuses) into response
+            url_meta = data.pop("_url_context_metadata", None)
+            if url_meta:
+                data["url_retrieval_metadata"] = url_meta.get("url_metadata", [])
+
+            return data
+        except Exception as e:
+            logger.error("URL-based scenario generation failed: %s", e)
+            return self._heuristic_url_scenario(url, difficulty)
+
+    def _heuristic_url_scenario(self, url: str, difficulty: int) -> dict:
+        """Fallback scenario when URL context is unavailable."""
+        return {
+            "name": "Breaking News Challenge",
+            "description": "Navigate a scenario inspired by breaking financial news. "
+                         "Evaluate claims, check sources, and make disciplined decisions.",
+            "category": "risk_management",
+            "difficulty": difficulty,
+            "time_pressure_seconds": 180,
+            "source_url": url,
+            "source_summary": "Scenario generated from heuristic fallback — URL context unavailable.",
+            "initial_data": {
+                "asset": "NEWSX",
+                "price": 75.00,
+                "your_balance": 10000,
+                "market_sentiment": "neutral",
+                "market_params": {
+                    "fixed_fee": 1.50,
+                    "pct_fee": 0.001,
+                    "base_spread_pct": 0.003,
+                },
+            },
+            "events": [
+                {"time": 10, "type": "news", "content": "Breaking: Major announcement expected from company", "change": None},
+                {"time": 25, "type": "social", "content": "Everyone is talking about this stock!", "change": None},
+                {"time": 40, "type": "price", "content": None, "change": 0.08},
+                {"time": 60, "type": "news", "content": "Analyst downgrades to HOLD, cites valuation concerns", "change": None},
+                {"time": 80, "type": "price", "content": None, "change": -0.12},
+                {"time": 100, "type": "social", "content": "Panic selling everywhere — time to buy the dip?", "change": None},
+                {"time": 130, "type": "news", "content": "Company issues official statement clarifying situation", "change": None},
+                {"time": 160, "type": "price", "content": None, "change": 0.05},
+            ],
+        }
+
 
 # ── Pydantic schemas for Gemini structured output validation ─────────────
-
-from pydantic import BaseModel, Field
-from typing import Optional
 
 
 class _ReflectionGeminiOutput(BaseModel):
@@ -2283,3 +3088,38 @@ class _GeneratedModuleOutput(BaseModel):
 
 class _GeneratedModulesGeminiOutput(BaseModel):
     modules: list[_GeneratedModuleOutput]
+
+
+# ── Search grounding credibility output ──────────────────────────────────
+class _CredibilityCheckOutput(BaseModel):
+    credibility_score: float = Field(ge=0, le=1)
+    verdict: str  # "verified", "partially_verified", "unverified", "likely_false"
+    supporting_sources: list[str]
+    contradicting_sources: list[str]
+    key_finding: str
+    risk_level: str  # "low", "medium", "high"
+    grounding_source_urls: list[dict] = Field(
+        default_factory=list,
+        description="Real source URLs from Google Search grounding [{uri, title}]",
+    )
+    search_queries_used: list[str] = Field(
+        default_factory=list,
+        description="Search queries Gemini executed for grounding",
+    )
+
+
+# ── URL context scenario output ──────────────────────────────────────────
+class _URLScenarioOutput(BaseModel):
+    name: str
+    description: str
+    category: str
+    difficulty: int = Field(ge=1, le=5)
+    time_pressure_seconds: int
+    source_url: str
+    source_summary: str
+    initial_data: dict
+    events: list[dict]
+    url_retrieval_metadata: list[dict] = Field(
+        default_factory=list,
+        description="URL retrieval statuses from Gemini URL context [{retrieved_url, status}]",
+    )

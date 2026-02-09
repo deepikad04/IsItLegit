@@ -47,6 +47,8 @@ export const scenariosApi = {
   listUnlocked: () => api.get('/scenarios/unlocked'),
   get: (id) => api.get(`/scenarios/${id}`),
   generateAdaptive: () => api.post('/scenarios/generate-adaptive'),
+  generateFromUrl: (url, difficulty = 3) =>
+    api.post('/scenarios/generate-from-url', null, { params: { url, difficulty } }),
 };
 
 export const simulationsApi = {
@@ -59,6 +61,8 @@ export const simulationsApi = {
   challenge: (id, data) => api.post(`/simulations/${id}/challenge`, data),
   skipTime: (id, seconds) => api.post(`/simulations/${id}/skip-time`, { seconds }),
   getStreamToken: (id) => api.post(`/simulations/${id}/stream-token`),
+  verifyCredibility: (claim, sourceType = 'news') =>
+    api.post('/simulations/verify-credibility', null, { params: { claim, source_type: sourceType } }),
 };
 
 // SSE streaming helper (uses opaque stream tokens — no JWT in query strings)

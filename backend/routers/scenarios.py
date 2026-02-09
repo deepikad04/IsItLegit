@@ -178,6 +178,48 @@ async def generate_adaptive_scenario(
     }
 
 
+@router.post("/generate-from-url")
+async def generate_scenario_from_url(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+    url: str = "",
+    difficulty: int = 3,
+):
+    """Generate a scenario from a real article URL using Gemini URL Context."""
+    from services.gemini_service import GeminiService
+
+    if not url:
+        raise HTTPException(status_code=400, detail="URL is required")
+
+    gemini = GeminiService()
+    scenario_data = await gemini.generate_scenario_from_url(url, difficulty)
+
+    scenario = Scenario(
+        name=scenario_data["name"],
+        description=scenario_data["description"],
+        difficulty=scenario_data.get("difficulty", difficulty),
+        category=scenario_data.get("category", "risk_management"),
+        initial_data=scenario_data["initial_data"],
+        events=scenario_data["events"],
+        time_pressure_seconds=scenario_data.get("time_pressure_seconds", 180),
+        generated_for_user_id=current_user.id,
+    )
+    db.add(scenario)
+    db.commit()
+    db.refresh(scenario)
+
+    return {
+        "id": scenario.id,
+        "name": scenario.name,
+        "description": scenario.description,
+        "difficulty": scenario.difficulty,
+        "category": scenario.category,
+        "time_pressure_seconds": scenario.time_pressure_seconds,
+        "source_url": scenario_data.get("source_url", url),
+        "source_summary": scenario_data.get("source_summary", ""),
+    }
+
+
 @router.get("/categories")
 async def list_categories(
     current_user: Annotated[User, Depends(get_current_user)],

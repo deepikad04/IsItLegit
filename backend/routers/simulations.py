@@ -170,8 +170,19 @@ async def make_decision(
 
     scenario = simulation.scenario
     engine = SimulationEngine(scenario)
+
+    # Use client-reported time if provided and within valid range of DB value
+    effective_time = simulation.current_time_elapsed
+    if decision_data.time_elapsed is not None:
+        client_time = decision_data.time_elapsed
+        # Accept if within a reasonable window (client can be up to 15s ahead of last DB write)
+        if 0 <= client_time <= scenario.time_pressure_seconds:
+            effective_time = client_time
+            # Sync DB to client time
+            simulation.current_time_elapsed = effective_time
+
     current_state = engine.get_state_at_time(
-        simulation.current_time_elapsed,
+        effective_time,
         simulation.current_portfolio
     )
 
@@ -180,7 +191,7 @@ async def make_decision(
         decision_data,
         current_state,
         simulation.current_portfolio,
-        time_elapsed=simulation.current_time_elapsed
+        time_elapsed=effective_time
     )
 
     # Get events since last decision
@@ -189,12 +200,12 @@ async def make_decision(
     ).order_by(Decision.simulation_time.desc()).first()
 
     last_time = last_decision.simulation_time if last_decision else 0
-    events_since = engine.get_events_between(last_time, simulation.current_time_elapsed)
+    events_since = engine.get_events_between(last_time, effective_time)
 
     # Store snapshot first (Phase 2.1: deduplication)
     snapshot = SimulationSnapshot(
         simulation_id=simulation_id,
-        simulation_time=simulation.current_time_elapsed,
+        simulation_time=effective_time,
         snapshot_type="decision_context",
         data=current_state,
     )
@@ -204,7 +215,7 @@ async def make_decision(
     # Create decision record with snapshot_id reference instead of full state blob
     decision = Decision(
         simulation_id=simulation_id,
-        simulation_time=simulation.current_time_elapsed,
+        simulation_time=effective_time,
         decision_type=decision_data.decision_type,
         asset=decision_data.asset or scenario.initial_data.get("asset"),
         amount=decision_data.amount,
@@ -467,6 +478,22 @@ async def list_simulations(
     return query.order_by(Simulation.started_at.desc()).limit(limit).all()
 
 
+# ── Credibility Check (Google Search Grounding) ─────────────────────
+
+@router.post("/verify-credibility")
+async def verify_credibility(
+    current_user: Annotated[User, Depends(get_current_user)],
+    claim: str = "",
+    source_type: str = "news",
+):
+    """Verify a news claim or social post using Google Search grounding."""
+    if not claim:
+        raise HTTPException(status_code=400, detail="Claim text is required")
+
+    gemini = GeminiService()
+    return await gemini.verify_claim_credibility(claim, source_type)
+
+
 # ── Stream Token (Phase 1.2: hardened SSE auth) ─────────────────────
 
 @router.post("/{simulation_id}/stream-token")
@@ -500,6 +527,8 @@ async def stream_simulation(
     db: Session = Depends(get_db),
 ):
     """SSE endpoint for real-time simulation state updates with live coaching."""
+    from database import SessionLocal
+
     # Validate opaque stream token (issued via POST /stream-token)
     token_data = _stream_tokens.get(token)
     if not token_data:
@@ -518,80 +547,104 @@ async def stream_simulation(
     if simulation.status != "in_progress":
         raise HTTPException(status_code=400, detail="Simulation is not active")
 
+    # Capture immutable data before entering generator (db session closes after response setup)
     scenario = simulation.scenario
+    # Eagerly load all scenario attributes we need, then detach from session
+    # so the generator doesn't trip on a closed session accessing lazy attrs
+    _ = scenario.id, scenario.name, scenario.initial_data, scenario.events
+    _ = scenario.time_pressure_seconds, scenario.category, scenario.difficulty
+    db.expunge(scenario)
+
     engine = SimulationEngine(scenario)
+    initial_time = simulation.current_time_elapsed
+    initial_portfolio = simulation.current_portfolio
 
     async def event_generator():
-        time_elapsed = simulation.current_time_elapsed
+        time_elapsed = initial_time
+        current_portfolio = initial_portfolio
         last_decision_count = 0
         last_nudge_time = -30  # cooldown tracker
 
         while time_elapsed <= scenario.time_pressure_seconds:
-            db.refresh(simulation)
-            if simulation.status != "in_progress":
-                yield f"data: {json.dumps({'status': simulation.status})}\n\n"
-                break
+            # Open a short-lived session per tick to avoid pool exhaustion
+            tick_db = SessionLocal()
+            try:
+                sim = tick_db.query(Simulation).filter(
+                    Simulation.id == simulation_id
+                ).first()
+                if not sim or sim.status != "in_progress":
+                    yield f"data: {json.dumps({'status': sim.status if sim else 'abandoned'})}\n\n"
+                    break
 
-            state = engine.get_state_at_time(time_elapsed, simulation.current_portfolio)
+                current_portfolio = sim.current_portfolio
 
-            # Check and execute pending limit/stop orders each tick
-            portfolio = state["portfolio"]
-            if portfolio.get("pending_orders"):
-                filled = engine._check_pending_orders(portfolio, state["current_price"], time_elapsed)
-                if filled:
-                    simulation.current_portfolio = portfolio
-                    db.commit()
+                state = engine.get_state_at_time(time_elapsed, current_portfolio)
 
-            payload = {
-                "time_elapsed": time_elapsed,
-                "time_remaining": max(0, scenario.time_pressure_seconds - time_elapsed),
-                "current_price": state["current_price"],
-                "price_history": state["price_history"],
-                "portfolio": state["portfolio"],
-                "available_info": state["available_info"],
-                "recent_events": state["recent_events"],
-                "market_conditions": state.get("market_conditions"),
-                "pending_orders": state.get("pending_orders"),
-                "status": "in_progress",
-            }
-            yield f"data: {json.dumps(payload, default=str)}\n\n"
+                # Check and execute pending limit/stop orders each tick
+                portfolio = state["portfolio"]
+                if portfolio.get("pending_orders"):
+                    filled = engine._check_pending_orders(portfolio, state["current_price"], time_elapsed)
+                    if filled:
+                        sim.current_portfolio = portfolio
+                        current_portfolio = portfolio
+                        tick_db.commit()
 
-            # Phase 1.1: Buffer DB writes — only persist every 15s or at boundaries
-            if time_elapsed % 15 == 0 or time_elapsed == 0:
-                simulation.current_time_elapsed = time_elapsed
-                db.commit()
+                payload = {
+                    "time_elapsed": time_elapsed,
+                    "time_remaining": max(0, scenario.time_pressure_seconds - time_elapsed),
+                    "current_price": state["current_price"],
+                    "price_history": state["price_history"],
+                    "portfolio": state["portfolio"],
+                    "available_info": state["available_info"],
+                    "recent_events": state["recent_events"],
+                    "market_conditions": state.get("market_conditions"),
+                    "pending_orders": state.get("pending_orders"),
+                    "status": "in_progress",
+                }
+                yield f"data: {json.dumps(payload, default=str)}\n\n"
 
-            # Phase 1.3: Live Coach Interventions
-            # Lightweight count check instead of loading all decisions every tick
-            decision_count = db.query(Decision).filter(
-                Decision.simulation_id == simulation_id
-            ).count()
+                # Buffer DB writes — only persist every 15s or at boundaries
+                if time_elapsed % 15 == 0 or time_elapsed == 0:
+                    sim.current_time_elapsed = time_elapsed
+                    tick_db.commit()
 
-            if (decision_count > last_decision_count
-                    and time_elapsed - last_nudge_time >= 30):
-                last_decision_count = decision_count
-                # Only load recent decisions for nudge analysis
-                recent_decisions = db.query(Decision).filter(
+                # Live Coach Interventions
+                decision_count = tick_db.query(Decision).filter(
                     Decision.simulation_id == simulation_id
-                ).order_by(Decision.simulation_time.desc()).limit(3).all()
-                recent_decisions.reverse()  # chronological order
-                try:
-                    gemini = GeminiService()
-                    nudge = await gemini.generate_live_nudge(
-                        recent_decisions, scenario, time_elapsed
-                    )
-                    if nudge:
-                        yield f"event: coach\ndata: {json.dumps(nudge)}\n\n"
-                        last_nudge_time = time_elapsed
-                except Exception:
-                    pass  # Never break the stream for coach failures
+                ).count()
+
+                if (decision_count > last_decision_count
+                        and time_elapsed - last_nudge_time >= 30):
+                    last_decision_count = decision_count
+                    recent_decisions = tick_db.query(Decision).filter(
+                        Decision.simulation_id == simulation_id
+                    ).order_by(Decision.simulation_time.desc()).limit(3).all()
+                    recent_decisions.reverse()
+                    try:
+                        gemini = GeminiService()
+                        nudge = await gemini.generate_live_nudge(
+                            recent_decisions, scenario, time_elapsed
+                        )
+                        if nudge:
+                            yield f"event: coach\ndata: {json.dumps(nudge)}\n\n"
+                            last_nudge_time = time_elapsed
+                    except Exception:
+                        pass  # Never break the stream for coach failures
+            finally:
+                tick_db.close()
 
             await asyncio.sleep(1)
             time_elapsed += 1
 
         # Final DB sync
-        simulation.current_time_elapsed = time_elapsed
-        db.commit()
+        final_db = SessionLocal()
+        try:
+            sim = final_db.query(Simulation).filter(Simulation.id == simulation_id).first()
+            if sim:
+                sim.current_time_elapsed = time_elapsed
+                final_db.commit()
+        finally:
+            final_db.close()
 
         yield f"event: complete\ndata: {json.dumps({'status': 'time_expired'})}\n\n"
 

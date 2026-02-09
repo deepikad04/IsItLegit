@@ -445,6 +445,7 @@ export default function Reflection() {
   const [secondaryError, setSecondaryError] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showShareCard, setShowShareCard] = useState(false);
+  const [showFullAnalysis, setShowFullAnalysis] = useState(false);
 
   const copyShareText = () => {
     if (!reflection) return;
@@ -640,6 +641,75 @@ export default function Reflection() {
           </div>
         </div>
       </div>
+
+      {/* At a Glance Summary (shown when full analysis is collapsed) */}
+      {!showFullAnalysis && (
+        <div className="card">
+          <h3 className="text-lg font-semibold text-brand-navy mb-4 flex items-center space-x-2">
+            <Zap className="h-5 w-5 text-brand-navy" />
+            <span>At a Glance</span>
+          </h3>
+          <div className="grid sm:grid-cols-3 gap-4 mb-5">
+            {/* Process Score */}
+            <div className="flex items-center gap-3 p-3 bg-brand-lavender/30 rounded-xl">
+              <div className={clsx(
+                'w-12 h-12 rounded-xl flex items-center justify-center text-lg font-black text-white',
+                processScore >= 70 ? 'bg-green-500' : processScore >= 50 ? 'bg-amber-500' : 'bg-red-500'
+              )}>
+                {Math.round(processScore)}
+              </div>
+              <div>
+                <p className="text-xs text-brand-navy/50 uppercase tracking-wide">Process</p>
+                <p className="text-sm font-semibold text-brand-navy">
+                  {processScore >= 70 ? 'Strong decisions' : processScore >= 50 ? 'Average process' : 'Needs improvement'}
+                </p>
+              </div>
+            </div>
+
+            {/* Top Bias */}
+            <div className="flex items-center gap-3 p-3 bg-brand-lavender/30 rounded-xl">
+              <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center">
+                <Brain className="h-6 w-6 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-xs text-brand-navy/50 uppercase tracking-wide">Top Bias</p>
+                <p className="text-sm font-semibold text-brand-navy capitalize">
+                  {reflection.patterns_detected?.length > 0
+                    ? reflection.patterns_detected
+                        .slice()
+                        .sort((a, b) => b.confidence - a.confidence)[0]
+                        .pattern_name.replace(/_/g, ' ')
+                    : 'None detected'}
+                </p>
+              </div>
+            </div>
+
+            {/* Luck vs Skill */}
+            <div className="flex items-center gap-3 p-3 bg-brand-lavender/30 rounded-xl">
+              <div className="w-12 h-12 rounded-xl bg-cyan-100 flex items-center justify-center">
+                <Shuffle className="h-6 w-6 text-cyan-600" />
+              </div>
+              <div>
+                <p className="text-xs text-brand-navy/50 uppercase tracking-wide">Luck / Skill</p>
+                <p className="text-sm font-semibold text-brand-navy">
+                  {Math.round((reflection.luck_factor || 0) * 100)}% / {Math.round((reflection.skill_factor || 0) * 100)}%
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setShowFullAnalysis(true)}
+            className="w-full py-3 rounded-xl bg-brand-navy text-white font-semibold hover:bg-brand-navy-light transition-colors flex items-center justify-center gap-2"
+          >
+            <span>Show Full Analysis</span>
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Full Analysis (expandable) */}
+      {showFullAnalysis && (<>
 
       {/* Process Quality & Luck/Skill */}
       <div className="grid md:grid-cols-2 gap-6">
@@ -1068,6 +1138,18 @@ export default function Reflection() {
           )}
         </div>
       )}
+
+      {/* Collapse button */}
+      <div className="text-center">
+        <button
+          onClick={() => setShowFullAnalysis(false)}
+          className="text-sm text-brand-navy/50 hover:text-brand-navy transition-colors"
+        >
+          Collapse to summary
+        </button>
+      </div>
+
+      </>)}
 
       {/* Actions */}
       <div className="flex flex-wrap gap-4 justify-center">

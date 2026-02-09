@@ -51,3 +51,4 @@ class ProfileSummary(BaseModel):
     top_weakness: Optional[str]
     recent_trend: str  # "improving", "stable", "declining"
     simulations_this_week: int
+    current_streak: int = 0

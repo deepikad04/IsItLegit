@@ -23,6 +23,7 @@ class DecisionCreate(BaseModel):
     order_type: str = Field("market", pattern="^(market|limit|stop)$")
     limit_price: Optional[float] = Field(None, gt=0)
     stop_price: Optional[float] = Field(None, gt=0)
+    time_elapsed: Optional[int] = Field(None, ge=0, description="Client-reported simulation time in seconds")
 
 
 class DecisionResponse(BaseModel):

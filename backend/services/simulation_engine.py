@@ -4,11 +4,18 @@ Features: spread/slippage, fees, liquidity, volatility clustering, gaps/halts,
 order types, time-pressure fills, correlated assets, micro-structure noise,
 margin/leverage, drawdown limits, news latency, macro indicators, crowd model.
 """
+import hashlib
+import json as _json
 import math
 import random
 from typing import Any
 from models.scenario import Scenario
 from schemas.decision import DecisionCreate
+
+
+def _stable_seed(name: str) -> int:
+    """Deterministic seed from a scenario name, stable across Python processes."""
+    return int(hashlib.sha256(name.encode()).hexdigest(), 16) % 10000
 
 # Module-level cache keyed on (scenario.id, market_params_hash)
 _timeline_cache: dict[str, dict] = {}
@@ -35,8 +42,12 @@ class SimulationEngine:
         self.correlation = self.initial_data.get("correlation", 0.7)
         self.secondary_price = self.initial_data.get("secondary_price", None)
 
-        # Build timelines (cached)
-        cache_key = f"{scenario.id}:{hash(str(self.market_params))}"
+        # Build timelines (cached — key includes all inputs that affect the timeline)
+        content_hash = hashlib.sha256(
+            _json.dumps({"mp": self.market_params, "ev": self.events, "id": self.initial_data},
+                        sort_keys=True, default=str).encode()
+        ).hexdigest()[:16]
+        cache_key = f"{scenario.id}:{content_hash}"
         if cache_key in _timeline_cache:
             cached = _timeline_cache[cache_key]
             self.price_timeline = cached["price"]
@@ -98,7 +109,7 @@ class SimulationEngine:
         self.secondary_timeline = {}
 
         current_price = self.initial_price
-        seed = seed_override if seed_override is not None else hash(self.scenario.name) % 10000
+        seed = seed_override if seed_override is not None else _stable_seed(self.scenario.name)
         rng = random.Random(seed)
 
         use_garch = self.market_params["volatility_clustering"]
@@ -218,7 +229,7 @@ class SimulationEngine:
         if not self.market_params["crowd_model_enabled"] or time_elapsed < 5:
             return {"crowd_buying_pct": 50, "crowd_action": "mixed", "pressure": "none"}
 
-        rng = random.Random(hash(self.scenario.name) % 10000 + time_elapsed)
+        rng = random.Random(_stable_seed(self.scenario.name) + time_elapsed)
 
         price_now = self.price_timeline.get(time_elapsed, self.initial_price)
         price_ago = self.price_timeline.get(max(0, time_elapsed - 10), self.initial_price)
@@ -268,7 +279,7 @@ class SimulationEngine:
 
     def _generate_macro_indicators(self, time_elapsed: int) -> list[dict]:
         """Generate macro economic indicators at a given time."""
-        rng = random.Random(hash(self.scenario.name) % 10000 + time_elapsed // 30)
+        rng = random.Random(_stable_seed(self.scenario.name) + time_elapsed // 30)
 
         price_now = self.price_timeline.get(time_elapsed, self.initial_price)
         price_start = self.price_timeline.get(0, self.initial_price)
@@ -276,7 +287,7 @@ class SimulationEngine:
 
         # Interest rate direction (shifts every ~60s)
         rate_phase = time_elapsed // 60
-        rate_rng = random.Random(hash(self.scenario.name) + rate_phase)
+        rate_rng = random.Random(_stable_seed(self.scenario.name) + rate_phase)
         rate_direction = rate_rng.choice(["rising", "stable", "falling"])
 
         # Market breadth
@@ -948,7 +959,7 @@ class SimulationEngine:
 
     def monte_carlo_outcomes(self, decisions: list, n: int = 100) -> dict:
         """Replay decisions against n different price timelines with market realism."""
-        base_seed = hash(self.scenario.name) % 10000
+        base_seed = _stable_seed(self.scenario.name)
         outcomes = []
 
         use_garch = self.market_params["volatility_clustering"]

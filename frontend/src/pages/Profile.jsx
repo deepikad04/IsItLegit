@@ -8,7 +8,7 @@ import {
 import {
   User, TrendingUp, TrendingDown, Target, Brain, Award,
   Calendar, Activity, ChevronRight, AlertTriangle, CheckCircle,
-  BookOpen, ThumbsUp, ThumbsDown, Shield
+  BookOpen, ThumbsUp, ThumbsDown, Shield, Flame, ToggleLeft, ToggleRight
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -256,6 +256,7 @@ export default function Profile() {
   const [history, setHistory] = useState([]);
   const [playbook, setPlaybook] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showThenVsNow, setShowThenVsNow] = useState(false);
 
   useEffect(() => {
     loadProfile();
@@ -382,6 +383,30 @@ export default function Profile() {
             />
           </div>
 
+          {/* Streak Counter */}
+          {(summary?.current_streak || 0) > 0 && (
+            <div className="card bg-gradient-to-r from-orange-50 to-amber-50 border-orange-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-orange-400 to-red-500 flex items-center justify-center shadow-lg">
+                    <Flame className="h-7 w-7 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-orange-600 font-semibold">Current Streak</p>
+                    <p className="text-3xl font-black text-orange-700">
+                      {summary.current_streak} day{summary.current_streak !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                </div>
+                <p className="text-sm text-orange-500 max-w-xs text-right">
+                  {summary.current_streak >= 7 ? 'Incredible consistency!' :
+                   summary.current_streak >= 3 ? 'Keep it going!' :
+                   'Build your streak!'}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Bias Badges */}
           <BadgeGrid profile={profile} />
 
@@ -457,10 +482,65 @@ export default function Profile() {
             </div>
           </div>
 
-          {/* Improvement Over Time */}
+          {/* Then vs Now Comparison */}
           {improvementData.length > 1 && (
             <div className="card">
-              <h3 className="text-lg font-semibold text-brand-navy mb-4">Improvement Over Time</h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-brand-navy">Improvement Over Time</h3>
+                <button
+                  onClick={() => setShowThenVsNow(!showThenVsNow)}
+                  className={clsx(
+                    'flex items-center gap-2 text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors',
+                    showThenVsNow ? 'bg-brand-navy text-white' : 'bg-brand-lavender text-brand-navy hover:bg-brand-navy/10'
+                  )}
+                >
+                  {showThenVsNow ? <ToggleRight className="h-4 w-4" /> : <ToggleLeft className="h-4 w-4" />}
+                  Then vs Now
+                </button>
+              </div>
+
+              {showThenVsNow && improvementData.length >= 2 ? (
+                <div className="grid grid-cols-2 gap-4 mb-6">
+                  <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 text-center">
+                    <p className="text-xs text-gray-400 uppercase tracking-wider font-bold mb-2">Then (First Session)</p>
+                    <p className={clsx(
+                      'text-4xl font-black',
+                      improvementData[0].score >= 50 ? 'text-amber-600' : 'text-red-600'
+                    )}>
+                      {Math.round(improvementData[0].score)}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">{improvementData[0].date}</p>
+                  </div>
+                  <div className="p-4 bg-brand-lavender/30 rounded-xl border border-brand-navy/20 text-center">
+                    <p className="text-xs text-brand-navy/60 uppercase tracking-wider font-bold mb-2">Now (Latest)</p>
+                    <p className={clsx(
+                      'text-4xl font-black',
+                      improvementData[improvementData.length - 1].score >= 70 ? 'text-green-700' :
+                      improvementData[improvementData.length - 1].score >= 50 ? 'text-amber-600' : 'text-red-600'
+                    )}>
+                      {Math.round(improvementData[improvementData.length - 1].score)}
+                    </p>
+                    <p className="text-xs text-brand-navy/60 mt-1">{improvementData[improvementData.length - 1].date}</p>
+                  </div>
+                  {(() => {
+                    const diff = improvementData[improvementData.length - 1].score - improvementData[0].score;
+                    return (
+                      <div className="col-span-2 text-center p-3 bg-white rounded-xl border border-gray-200">
+                        <span className={clsx(
+                          'text-lg font-bold',
+                          diff > 0 ? 'text-green-700' : diff < 0 ? 'text-red-600' : 'text-gray-600'
+                        )}>
+                          {diff > 0 ? '+' : ''}{Math.round(diff)} points
+                        </span>
+                        <span className="text-sm text-gray-400 ml-2">
+                          {diff > 10 ? 'Great improvement!' : diff > 0 ? 'Steady progress' : diff === 0 ? 'Same score' : 'Room to grow'}
+                        </span>
+                      </div>
+                    );
+                  })()}
+                </div>
+              ) : null}
+
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={improvementData}>

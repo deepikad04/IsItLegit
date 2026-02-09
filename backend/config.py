@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     gemini_max_retries: int = 3
     gemini_timeout_seconds: int = 30
     gemini_cache_ttl_seconds: int = 300
+    gemini_context_cache_ttl_minutes: int = 30  # Context caching TTL for shared prefixes
+    gemini_enable_search_grounding: bool = True  # Google Search grounding for credibility
+    gemini_enable_url_context: bool = True  # URL context for article-based scenarios
 
     # Server
     host: str = "0.0.0.0"

@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, Integer, ForeignKey, Float, Index
+from sqlalchemy import Column, String, Text, DateTime, Integer, ForeignKey, Float, Index
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from database import Base
@@ -40,7 +40,7 @@ class Decision(Base):
     snapshot_id = Column(UUID(as_uuid=True), ForeignKey("simulation_snapshots.id"), nullable=True)
 
     # User's stated reasoning for the decision
-    rationale = Column(String(500), nullable=True)
+    rationale = Column(Text, nullable=True)
 
     # Events that occurred since last decision
     events_since_last = Column(JSONB, default=list)

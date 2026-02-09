@@ -3,6 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { scenariosApi, simulationsApi, profileApi } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import {
+  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid
+} from 'recharts';
+import {
   Play,
   TrendingUp,
   Target,
@@ -18,6 +21,9 @@ import {
   Sparkles,
   Filter,
   X,
+  Brain,
+  Flame,
+  Compass,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -31,6 +37,7 @@ export default function Dashboard() {
   const [generatingChallenge, setGeneratingChallenge] = useState(false);
   const [filterCategory, setFilterCategory] = useState('all');
   const [filterDifficulty, setFilterDifficulty] = useState('all');
+  const [progressData, setProgressData] = useState([]);
 
   useEffect(() => {
     loadData();
@@ -46,6 +53,16 @@ export default function Dashboard() {
       setScenarios(scenariosRes.data);
       setRecentSimulations(simulationsRes.data);
       setProfileSummary(profileRes.data);
+
+      // Load full profile for progress chart (non-blocking)
+      profileApi.get().then(res => {
+        if (res.data?.improvement_trajectory) {
+          setProgressData(res.data.improvement_trajectory.map(p => ({
+            date: new Date(p.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            score: p.overall_score || p.score || 0,
+          })));
+        }
+      }).catch(() => {});
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
     } finally {
@@ -138,7 +155,10 @@ export default function Dashboard() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-brand-navy"></div>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-brand-navy mx-auto mb-3"></div>
+          <p className="text-brand-navy/60 text-sm">Loading your dashboard...</p>
+        </div>
       </div>
     );
   }
@@ -182,6 +202,16 @@ export default function Dashboard() {
                 <p className="text-xs text-brand-navy/50 uppercase tracking-wider">Strength</p>
               </div>
             )}
+            {/* Streak */}
+            {profileSummary?.current_streak > 0 && (
+              <div className="text-center">
+                <div className="w-14 h-14 rounded-2xl bg-orange-100 flex items-center justify-center mx-auto mb-1.5">
+                  <Flame className="h-7 w-7 text-orange-500" />
+                </div>
+                <p className="text-2xl font-bold text-orange-600">{profileSummary.current_streak}</p>
+                <p className="text-xs text-brand-navy/50 uppercase tracking-wider">Streak</p>
+              </div>
+            )}
             {/* Focus area */}
             {profileSummary?.top_weakness && (
               <div className="text-center">
@@ -203,6 +233,114 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* New User Empty State */}
+      {(user?.total_simulations || 0) === 0 && (
+        <div className="card bg-gradient-to-br from-brand-cream to-brand-lavender/30 border-brand-blue/20 text-center py-8 animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
+          <Compass className="h-12 w-12 text-brand-navy mx-auto mb-3" />
+          <h2 className="text-xl font-bold text-brand-navy mb-2">Welcome to IsItLegit!</h2>
+          <p className="text-brand-navy/60 max-w-md mx-auto mb-6">
+            Start your first simulation to begin building your decision profile. Pick any scenario below — no experience needed.
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-4">
+            <Link to="/learning" className="btn btn-secondary flex items-center gap-2">
+              <BookOpen className="h-4 w-4" /> Learn the Basics
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* Progress Chart + Killer Stat (for returning users) */}
+      {progressData.length > 1 && (() => {
+        const firstScore = progressData[0]?.score || 0;
+        const latestScore = progressData[progressData.length - 1]?.score || 0;
+        const improvement = latestScore - firstScore;
+        const simCount = progressData.length;
+        return (
+          <div className="card animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-brand-navy flex items-center gap-2">
+                <TrendingUp className="h-5 w-5" /> Your Progress
+              </h2>
+              <Link to="/profile" className="text-sm text-brand-navy/60 hover:text-brand-navy flex items-center gap-1 transition-colors">
+                Full Profile <ArrowUpRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+            {/* Killer stat banner */}
+            {improvement > 0 && simCount >= 2 && (
+              <div className="mb-4 p-4 bg-gradient-to-r from-emerald-50 to-cyan-50 border border-emerald-200 rounded-xl flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                  <TrendingUp className="h-7 w-7 text-emerald-600" />
+                </div>
+                <div>
+                  <p className="text-2xl font-black text-emerald-700">
+                    +{Math.round(improvement)} points
+                  </p>
+                  <p className="text-sm text-emerald-600/80">
+                    Process quality improved across {simCount} simulations ({firstScore} → {latestScore})
+                  </p>
+                </div>
+              </div>
+            )}
+            <div className="h-48">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={progressData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis dataKey="date" stroke="#9ca3af" tick={{ fontSize: 11, fill: '#6b7280' }} />
+                  <YAxis stroke="#9ca3af" tick={{ fontSize: 11, fill: '#6b7280' }} domain={[0, 100]} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#F1EDE2', border: '1px solid #D1D3EB', borderRadius: '8px', fontSize: '13px' }}
+                    labelStyle={{ color: '#3A3E61' }}
+                  />
+                  <Line type="monotone" dataKey="score" stroke="#3A3E61" strokeWidth={2} dot={{ fill: '#3A3E61', r: 3 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Recommended Scenario */}
+      {profileSummary?.top_weakness && filteredScenarios.length > 0 && (() => {
+        const weaknessToCategory = {
+          fomo: 'fomo_trap', loss_aversion: 'loss_aversion', impulsivity: 'fomo_trap',
+          social_proof_reliance: 'social_proof', overconfidence: 'risk_management',
+          anchoring: 'patience_test', herd_following: 'social_proof',
+        };
+        const targetCategory = weaknessToCategory[profileSummary.top_weakness];
+        const recommended = filteredScenarios.find(s => s.category === targetCategory && !s.is_locked);
+        if (!recommended) return null;
+        const RecIcon = getCategoryIcon(recommended.category);
+        return (
+          <div className="card bg-gradient-to-r from-brand-lavender/40 to-brand-cream border-brand-navy/20 animate-fade-in-up" style={{ animationDelay: '0.15s' }}>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div className="flex items-start space-x-4">
+                <div className="w-12 h-12 rounded-xl bg-brand-navy/10 flex items-center justify-center flex-shrink-0">
+                  <RecIcon className="h-6 w-6 text-brand-navy" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <h2 className="text-lg font-semibold text-brand-navy">Recommended for You</h2>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-brand-lavender text-brand-navy text-xs font-bold">
+                      <Target className="h-3 w-3" /> Targets {profileSummary.top_weakness.replace(/_/g, ' ')}
+                    </span>
+                  </div>
+                  <p className="text-brand-navy/70 text-sm">
+                    <span className="font-semibold">{recommended.name}</span> — {recommended.description}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => startSimulation(recommended)}
+                className="btn btn-primary flex items-center space-x-2 whitespace-nowrap"
+              >
+                <Play className="h-4 w-4" />
+                <span>Start</span>
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* AI Challenge Card */}
       {profileSummary && (user?.total_simulations || 0) >= 1 && (
@@ -279,6 +417,14 @@ export default function Dashboard() {
             <span className="text-sm text-brand-navy/50 ml-1">{filteredScenarios.length} of {scenarios.length}</span>
           </div>
         </div>
+        {filteredScenarios.length === 0 ? (
+          <div className="card text-center py-10">
+            <Target className="h-10 w-10 text-brand-blue mx-auto mb-3" />
+            <p className="text-brand-navy font-semibold mb-1">No scenarios match your filters</p>
+            <p className="text-brand-navy/60 text-sm mb-4">Try adjusting the category or difficulty level.</p>
+            <button onClick={clearFilters} className="btn btn-secondary text-sm">Clear Filters</button>
+          </div>
+        ) : null}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredScenarios.map((scenario, i) => {
             const CategoryIcon = getCategoryIcon(scenario.category);

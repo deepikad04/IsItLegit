@@ -265,9 +265,9 @@ class TestTimelineCache:
         """Second engine creation for same scenario uses cached timeline."""
         scenario = _make_scenario()
         engine1 = SimulationEngine(scenario)
-        # Cache key includes scenario ID and market_params hash
-        cache_key = f"{scenario.id}:{hash(str(engine1.market_params))}"
-        assert cache_key in _timeline_cache
+        # Cache should have exactly one entry for this scenario
+        matching = [k for k in _timeline_cache if k.startswith(str(scenario.id))]
+        assert len(matching) == 1
 
         engine2 = SimulationEngine(scenario)
         # Both engines should share the same timeline dict
@@ -279,10 +279,11 @@ class TestTimelineCache:
         s2 = _make_scenario("Scenario B")
         e1 = SimulationEngine(s1)
         e2 = SimulationEngine(s2)
-        key1 = f"{s1.id}:{hash(str(e1.market_params))}"
-        key2 = f"{s2.id}:{hash(str(e2.market_params))}"
-        assert key1 in _timeline_cache
-        assert key2 in _timeline_cache
+        # Each scenario should have its own cache entry
+        matching_s1 = [k for k in _timeline_cache if k.startswith(str(s1.id))]
+        matching_s2 = [k for k in _timeline_cache if k.startswith(str(s2.id))]
+        assert len(matching_s1) == 1
+        assert len(matching_s2) == 1
         assert e1.price_timeline is not e2.price_timeline
 
 

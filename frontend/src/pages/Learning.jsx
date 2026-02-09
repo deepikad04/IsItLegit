@@ -1,11 +1,24 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { learningApi } from '../api/client';
+import { learningApi, profileApi } from '../api/client';
 import {
   BookOpen, ChevronLeft, ChevronRight, CheckCircle, XCircle,
-  Brain, Target, Calculator, Newspaper, Award, Lock, ArrowRight
+  Brain, Target, Calculator, Newspaper, Award, Lock, ArrowRight, Sparkles
 } from 'lucide-react';
 import clsx from 'clsx';
+
+// Map user bias patterns to relevant learning module categories
+const BIAS_TO_MODULE = {
+  fomo: 'emotional',
+  loss_aversion: 'emotional',
+  impulsivity: 'emotional',
+  overconfidence: 'confidence',
+  anchoring: 'anchoring',
+  social_proof_reliance: 'social',
+  herd_following: 'social',
+  recency_bias: 'technical',
+  patience: 'patience',
+};
 
 const MODULE_ICONS = {
   brain: Brain,
@@ -22,7 +35,7 @@ const MODULE_COLOR = {
 
 // ── Module List View ─────────────────────────────────────────────────
 
-function ModuleCard({ module, onSelect }) {
+function ModuleCard({ module, onSelect, isRecommended }) {
   const Icon = MODULE_ICONS[module.icon] || BookOpen;
   const colors = MODULE_COLOR;
 
@@ -31,7 +44,7 @@ function ModuleCard({ module, onSelect }) {
       onClick={() => onSelect(module)}
       className={clsx(
         'card text-left w-full border transition-all hover:scale-[1.02] hover:shadow-lg',
-        colors.card
+        isRecommended && !module.completed ? 'border-brand-navy/30 ring-1 ring-brand-navy/10 shadow-md' : colors.card
       )}
     >
       <div className="flex items-start space-x-4">
@@ -43,7 +56,14 @@ function ModuleCard({ module, onSelect }) {
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between mb-1">
-            <h3 className="text-lg font-semibold text-brand-navy">{module.title}</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-semibold text-brand-navy">{module.title}</h3>
+              {isRecommended && !module.completed && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-brand-lavender text-brand-navy text-xs font-bold">
+                  <Sparkles className="h-3 w-3" /> For You
+                </span>
+              )}
+            </div>
             {module.completed ? (
               <span className="flex items-center space-x-1 text-green-700 text-sm">
                 <CheckCircle className="h-4 w-4" />
@@ -326,6 +346,8 @@ export default function Learning() {
   const [activeModule, setActiveModule] = useState(null);
   const [view, setView] = useState('list'); // 'list', 'lesson', 'quiz'
   const [lessonIndex, setLessonIndex] = useState(0);
+  const [recommendedCategories, setRecommendedCategories] = useState([]);
+  const [topWeakness, setTopWeakness] = useState(null);
 
   useEffect(() => {
     loadModules();
@@ -333,8 +355,24 @@ export default function Learning() {
 
   const loadModules = async () => {
     try {
-      const res = await learningApi.getModules();
-      setModules(res.data);
+      const [modulesRes, profileRes] = await Promise.all([
+        learningApi.getModules(),
+        profileApi.get().catch(() => ({ data: null })),
+      ]);
+      setModules(modulesRes.data);
+
+      // Derive recommended module categories from user's weakest biases
+      if (profileRes.data?.bias_patterns) {
+        const weakBiases = profileRes.data.bias_patterns
+          .filter(p => p.score >= 0.4)
+          .sort((a, b) => b.score - a.score);
+
+        if (weakBiases.length > 0) {
+          setTopWeakness(weakBiases[0].name.replace(/_/g, ' '));
+          const cats = [...new Set(weakBiases.map(b => BIAS_TO_MODULE[b.name]).filter(Boolean))];
+          setRecommendedCategories(cats);
+        }
+      }
     } catch (err) {
       console.error('Failed to load modules:', err);
     } finally {
@@ -456,12 +494,38 @@ export default function Learning() {
         )}
       </div>
 
+      {/* Recommended Banner */}
+      {recommendedCategories.length > 0 && (
+        <div className="card bg-gradient-to-r from-brand-lavender/50 to-brand-cream border-brand-navy/20 mb-4">
+          <div className="flex items-center gap-3">
+            <Sparkles className="h-5 w-5 text-brand-navy flex-shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-brand-navy">Personalized for You</p>
+              <p className="text-xs text-brand-navy/60">
+                Based on your detected {topWeakness} patterns, we recommend the highlighted modules below.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Module Cards */}
       {modules.length > 0 ? (
         <div className="space-y-4">
-          {modules.map((mod) => (
-            <ModuleCard key={mod.id} module={mod} onSelect={openModule} />
-          ))}
+          {[...modules]
+            .sort((a, b) => {
+              const aRec = recommendedCategories.includes(a.category) && !a.completed ? -1 : 0;
+              const bRec = recommendedCategories.includes(b.category) && !b.completed ? -1 : 0;
+              return aRec - bRec;
+            })
+            .map((mod) => (
+              <ModuleCard
+                key={mod.id}
+                module={mod}
+                onSelect={openModule}
+                isRecommended={recommendedCategories.includes(mod.category)}
+              />
+            ))}
         </div>
       ) : (
         <div className="card text-center py-12">

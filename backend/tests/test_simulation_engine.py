@@ -169,3 +169,66 @@ class TestSimulationEngine:
         for t in range(0, self.scenario.time_pressure_seconds + 1):
             assert self.engine.price_timeline[t] == engine2.price_timeline[t], \
                 f"Price differs at t={t}"
+
+    def test_stable_seed_is_deterministic(self):
+        """_stable_seed should produce the same value across calls (no PYTHONHASHSEED dependency)."""
+        from services.simulation_engine import _stable_seed
+        seed1 = _stable_seed("Test Scenario")
+        seed2 = _stable_seed("Test Scenario")
+        assert seed1 == seed2
+        # Different names produce different seeds
+        seed3 = _stable_seed("Different Scenario")
+        assert seed1 != seed3
+
+    def test_stable_seed_returns_bounded_int(self):
+        """_stable_seed should return a value in [0, 10000)."""
+        from services.simulation_engine import _stable_seed
+        for name in ["Alpha", "Beta", "Gamma", "A" * 1000]:
+            seed = _stable_seed(name)
+            assert 0 <= seed < 10000, f"Seed {seed} out of range for '{name}'"
+
+    def test_cache_key_changes_when_events_change(self):
+        """Timeline cache key should differ when events change."""
+        from services.simulation_engine import _timeline_cache
+        _timeline_cache.clear()
+
+        s1 = _make_scenario()
+        e1 = SimulationEngine(s1)
+
+        s2 = _make_scenario()
+        s2.events = [{"time": 10, "type": "price", "change": 0.50}]
+        # Force new scenario id so cache doesn't collide on id
+        s2.id = "different-id"
+        e2 = SimulationEngine(s2)
+
+        # Timelines should differ because events differ
+        assert e1.price_timeline[20] != e2.price_timeline[20] or e1.price_timeline[40] != e2.price_timeline[40]
+
+
+class TestDecisionTimeSync:
+    """Test that DecisionCreate accepts time_elapsed from the client."""
+
+    def test_decision_create_accepts_time_elapsed(self):
+        d = DecisionCreate(
+            decision_type="buy",
+            amount=10,
+            confidence_level=3,
+            time_elapsed=42,
+        )
+        assert d.time_elapsed == 42
+
+    def test_decision_create_time_elapsed_optional(self):
+        d = DecisionCreate(
+            decision_type="hold",
+            confidence_level=3,
+        )
+        assert d.time_elapsed is None
+
+    def test_decision_create_time_elapsed_rejects_negative(self):
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError):
+            DecisionCreate(
+                decision_type="buy",
+                amount=10,
+                time_elapsed=-1,
+            )

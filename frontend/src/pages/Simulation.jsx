@@ -11,7 +11,7 @@ import {
   ShieldCheck, ShieldAlert, ShieldQuestion, Zap, CheckCircle, XCircle,
   Pause, Eye, Globe, MessageCircle, Twitter, Hash, FastForward,
   Activity, Ban, BarChart3, AlertTriangle, Target, Layers,
-  Play, Shield, Gauge, Radio, Heart, Repeat2, ArrowRight
+  Play, Shield, Gauge, Radio, Heart, Repeat2, ArrowRight, X
 } from 'lucide-react';
 import clsx from 'clsx';
 import CoachNudge from '../components/CoachNudge';
@@ -203,6 +203,10 @@ export default function Simulation() {
   // Toast notifications
   const [toasts, setToasts] = useState([]);
 
+  // Decision history
+  const [decisionHistory, setDecisionHistory] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
+
   const decisionStartTime = useRef(Date.now());
   const panelSwitchTime = useRef(Date.now());
   const sseReaderRef = useRef(null);
@@ -314,6 +318,26 @@ export default function Simulation() {
     };
   }, [activePanel]);
 
+  /* ─── Keyboard Shortcuts ─────────────────────────────────────── */
+
+  useEffect(() => {
+    if (phase !== 'running' || !simulation) return;
+    const handler = (e) => {
+      // Ignore if user is typing in an input/textarea
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      switch (e.key.toLowerCase()) {
+        case 'b': makeDecision('buy'); break;
+        case 's': makeDecision('sell'); break;
+        case 'h': makeDecision('hold'); break;
+        case 'w': case ' ': e.preventDefault(); setWaitPickerOpen(v => !v); break;
+        case 'd': setShowHistory(v => !v); break;
+        default: break;
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [phase, simulation, decisionAmount, confidence, rationale, orderType, limitPrice, stopPrice, isHalted]);
+
   /* ─── Actions ───────────────────────────────────────────────── */
 
   const loadScenario = async () => {
@@ -363,9 +387,19 @@ export default function Simulation() {
       order_type: orderType,
       limit_price: orderType === 'limit' && limitPrice ? parseFloat(limitPrice) : null,
       stop_price: orderType === 'stop' && stopPrice ? parseFloat(stopPrice) : null,
+      time_elapsed: timeElapsed,
     };
     try {
       await simulationsApi.makeDecision(simulation.id, payload);
+      // Track in decision history
+      setDecisionHistory(prev => [...prev, {
+        type: decisionType,
+        amount: decisionAmount,
+        price: state?.current_price,
+        time: timeElapsed,
+        orderType,
+        rationale: rationale.trim() || null,
+      }]);
       decisionStartTime.current = Date.now();
       setInfoViewTimes({});
       setRationale('');
@@ -712,21 +746,21 @@ export default function Simulation() {
       )}
 
       {/* ─── Header ─────────────────────────────────────────────── */}
-      <div className={clsx('flex items-center justify-between mb-5', isHalted && 'mt-12')}>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">{scenario.name}</h1>
-          <p className="text-gray-500 text-sm mt-0.5">
+      <div className={clsx('flex items-center justify-between gap-3 mb-5 flex-wrap', isHalted && 'mt-12')}>
+        <div className="min-w-0">
+          <h1 className="text-lg sm:text-2xl font-bold text-gray-900 truncate">{scenario.name}</h1>
+          <p className="text-gray-500 text-xs sm:text-sm mt-0.5">
             <span className="font-semibold text-gray-700">${portfolio.cash?.toFixed(2) || '0.00'}</span> cash available
           </p>
         </div>
         <div className={clsx(
-          'flex items-center gap-2 px-5 py-3 rounded-xl font-mono shadow-md',
+          'flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-3 rounded-xl font-mono shadow-md flex-shrink-0',
           timeRemaining <= 30
             ? 'bg-red-600 text-white'
             : 'bg-white text-gray-900 border border-gray-200'
         )}>
-          <Clock className="h-5 w-5" />
-          <span className="text-2xl font-bold tracking-tight">
+          <Clock className="h-4 w-4 sm:h-5 sm:w-5" />
+          <span className="text-xl sm:text-2xl font-bold tracking-tight">
             {Math.floor(timeRemaining / 60)}:{(timeRemaining % 60).toString().padStart(2, '0')}
           </span>
         </div>
@@ -825,14 +859,14 @@ export default function Simulation() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
         {/* ─── Price Chart Card ──────────────────────────────────── */}
-        <div className="lg:col-span-2 bg-white rounded-2xl p-6 border border-gray-200 shadow-md">
-          <div className="flex items-center justify-between mb-5">
-            <div>
+        <div className="lg:col-span-2 bg-white rounded-2xl p-4 sm:p-6 border border-gray-200 shadow-md">
+          <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+            <div className="min-w-0">
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">{scenario.initial_data?.asset}</p>
-              <div className="flex items-center gap-3">
-                <span className="text-4xl font-black text-gray-900">${state.current_price.toFixed(2)}</span>
+              <div className="flex items-center gap-2 sm:gap-3">
+                <span className="text-2xl sm:text-4xl font-black text-gray-900">${state.current_price.toFixed(2)}</span>
                 <span className={clsx(
-                  'flex items-center text-sm font-bold px-3 py-1 rounded-full',
+                  'flex items-center text-xs sm:text-sm font-bold px-2 sm:px-3 py-1 rounded-full',
                   priceChange >= 0 ? 'text-emerald-800 bg-emerald-100' : 'text-red-800 bg-red-100'
                 )}>
                   {priceChange >= 0 ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -842,7 +876,7 @@ export default function Simulation() {
             </div>
             <div className="text-right">
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Portfolio</p>
-              <p className="text-2xl font-black text-gray-900">${(portfolio.total_value || 0).toFixed(2)}</p>
+              <p className="text-lg sm:text-2xl font-black text-gray-900">${(portfolio.total_value || 0).toFixed(2)}</p>
               {Object.keys(portfolio.holdings || {}).length > 0 && (
                 <p className="text-xs text-gray-500 mt-0.5">
                   {Object.entries(portfolio.holdings).map(([k, v]) => `${v} ${k}`).join(', ')}
@@ -851,7 +885,7 @@ export default function Simulation() {
             </div>
           </div>
 
-          <div className="h-72">
+          <div className="h-48 sm:h-72">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={chartData}>
                 <defs>
@@ -936,7 +970,7 @@ export default function Simulation() {
           </div>
 
           {/* Panel content */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ maxHeight: 360 }}>
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 max-h-[260px] sm:max-h-[360px]">
 
             {/* NEWS — Enhanced */}
             {activePanel === 'news' && (
@@ -1147,7 +1181,7 @@ export default function Simulation() {
       </div>
 
       {/* ─── Decision Panel ─────────────────────────────────────── */}
-      <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-md mt-5">
+      <div className="bg-white rounded-2xl p-4 sm:p-6 border border-gray-200 shadow-md mt-5">
 
         {/* Amount + Confidence row */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
@@ -1288,42 +1322,51 @@ export default function Simulation() {
         )}
 
         {/* Action Buttons */}
-        <div className="flex flex-wrap gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
           <button onClick={() => makeDecision('buy')} disabled={isHalted}
             className={clsx(
-              'flex items-center justify-center gap-2 flex-1 py-3.5 rounded-xl font-bold text-base transition-all shadow-sm',
+              'flex items-center justify-center gap-2 py-3 sm:py-3.5 rounded-xl font-bold text-sm sm:text-base transition-all shadow-sm',
               isHalted
                 ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                 : 'bg-emerald-600 text-white hover:bg-emerald-500 active:scale-[0.98]'
             )}>
-            <TrendingUp className="h-5 w-5" />
+            <TrendingUp className="h-4 w-4 sm:h-5 sm:w-5" />
             {isHalted ? 'HALTED' : `BUY $${decisionAmount}`}
           </button>
           <button onClick={() => makeDecision('sell')} disabled={isHalted}
             className={clsx(
-              'flex items-center justify-center gap-2 flex-1 py-3.5 rounded-xl font-bold text-base transition-all shadow-sm',
+              'flex items-center justify-center gap-2 py-3 sm:py-3.5 rounded-xl font-bold text-sm sm:text-base transition-all shadow-sm',
               isHalted
                 ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                 : 'bg-red-600 text-white hover:bg-red-500 active:scale-[0.98]'
             )}>
-            <TrendingDown className="h-5 w-5" />
+            <TrendingDown className="h-4 w-4 sm:h-5 sm:w-5" />
             {isHalted ? 'HALTED' : 'SELL'}
           </button>
           <button onClick={() => makeDecision('hold')}
-            className="flex items-center justify-center gap-2 flex-1 py-3.5 rounded-xl font-bold text-base bg-gray-100 text-gray-700 hover:bg-gray-200 transition-all">
-            <Minus className="h-5 w-5" />
+            className="flex items-center justify-center gap-2 py-3 sm:py-3.5 rounded-xl font-bold text-sm sm:text-base bg-gray-100 text-gray-700 hover:bg-gray-200 transition-all">
+            <Minus className="h-4 w-4 sm:h-5 sm:w-5" />
             HOLD
           </button>
           <button onClick={() => setWaitPickerOpen(!waitPickerOpen)}
             className={clsx(
-              'flex items-center justify-center gap-2 flex-1 py-3.5 rounded-xl font-bold text-base transition-all',
+              'flex items-center justify-center gap-2 py-3 sm:py-3.5 rounded-xl font-bold text-sm sm:text-base transition-all',
               waitPickerOpen
                 ? 'bg-brand-navy text-white'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             )}>
-            <Clock className="h-5 w-5" />
+            <Clock className="h-4 w-4 sm:h-5 sm:w-5" />
             WAIT
           </button>
+        </div>
+
+        {/* Keyboard hints — hidden on touch devices */}
+        <div className="hidden sm:flex items-center justify-center gap-3 mt-4 text-xs text-gray-400">
+          <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-gray-100 rounded border border-gray-200 font-mono text-gray-500">B</kbd> Buy</span>
+          <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-gray-100 rounded border border-gray-200 font-mono text-gray-500">S</kbd> Sell</span>
+          <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-gray-100 rounded border border-gray-200 font-mono text-gray-500">H</kbd> Hold</span>
+          <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-gray-100 rounded border border-gray-200 font-mono text-gray-500">W</kbd> Wait</span>
+          <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-gray-100 rounded border border-gray-200 font-mono text-gray-500">D</kbd> History</span>
         </div>
 
         {/* Footer actions */}
@@ -1334,6 +1377,62 @@ export default function Simulation() {
           <button onClick={handleComplete} className="btn btn-primary">End Simulation Early</button>
         </div>
       </div>
+
+      {/* Decision History Panel */}
+      {showHistory && (
+        <div className="fixed right-0 top-0 bottom-0 w-full sm:w-80 bg-white border-l border-gray-200 shadow-2xl z-40 flex flex-col">
+          <div className="flex items-center justify-between p-4 border-b border-gray-200">
+            <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider">Your Moves</h3>
+            <button onClick={() => setShowHistory(false)} className="text-gray-400 hover:text-gray-700">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {decisionHistory.length === 0 ? (
+              <div className="text-center py-8">
+                <Minus className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+                <p className="text-sm text-gray-400">No decisions yet</p>
+                <p className="text-xs text-gray-300 mt-1">Your moves will appear here</p>
+              </div>
+            ) : (
+              decisionHistory.map((d, i) => (
+                <div key={i} className={clsx(
+                  'p-3 rounded-xl border text-sm',
+                  d.type === 'buy' ? 'bg-emerald-50 border-emerald-200' :
+                  d.type === 'sell' ? 'bg-red-50 border-red-200' :
+                  d.type === 'hold' ? 'bg-blue-50 border-blue-200' :
+                  'bg-amber-50 border-amber-200'
+                )}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={clsx(
+                      'font-bold uppercase text-xs tracking-wide',
+                      d.type === 'buy' ? 'text-emerald-700' :
+                      d.type === 'sell' ? 'text-red-700' :
+                      d.type === 'hold' ? 'text-blue-700' :
+                      'text-amber-700'
+                    )}>
+                      #{i + 1} {d.type}
+                    </span>
+                    <span className="text-xs text-gray-400">{Math.floor(d.time / 60)}:{(d.time % 60).toString().padStart(2, '0')}</span>
+                  </div>
+                  {(d.type === 'buy' || d.type === 'sell') && (
+                    <p className="text-xs text-gray-600">
+                      ${d.amount} @ ${d.price?.toFixed(2)}
+                      {d.orderType !== 'market' && ` (${d.orderType})`}
+                    </p>
+                  )}
+                  {d.rationale && (
+                    <p className="text-xs text-gray-500 mt-1 italic truncate">"{d.rationale}"</p>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+          <div className="p-4 border-t border-gray-200 bg-gray-50">
+            <p className="text-xs text-gray-400 text-center">{decisionHistory.length} decisions made</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

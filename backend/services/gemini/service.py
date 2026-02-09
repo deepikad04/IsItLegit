@@ -121,7 +121,7 @@ class GeminiService:
                     "response_mime_type": "application/json",
                     "temperature": 1.0,  # Gemini 3: keep at 1.0 to avoid looping/degraded reasoning
                     "thinking_config": genai_types.ThinkingConfig(
-                        thinking_level=thinking_level,
+                        include_thoughts=True,
                     ),
                 }
                 if tools:

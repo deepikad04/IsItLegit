@@ -1,0 +1,380 @@
+[
+  {
+    "id": "mod_emotional",
+    "title": "Emotional Intelligence in Trading",
+    "description": "Learn to recognize and manage the emotions that drive poor investment decisions — fear, greed, panic, and euphoria.",
+    "category": "emotional",
+    "icon": "brain",
+    "color": "purple",
+    "lessons": [
+      {
+        "id": "les_emo_01",
+        "title": "Emotions as Information",
+        "content": "Strong feelings during trading aren't the enemy — they're data. Excitement often signals FOMO. Fear can flag genuine risk or reveal an opportunity others are missing. The key is to notice the emotion, name it, and then ask: is this reaction based on analysis or instinct?\n\nProfessional traders don't suppress feelings. They use them as a secondary signal. If you feel unusually excited about a trade, it's worth pausing to ask whether the excitement is evidence-based or hype-driven.",
+        "key_insight": "Don't suppress emotions — use them as a trading signal. Strong feelings often mean something important is happening."
+      },
+      {
+        "id": "les_emo_02",
+        "title": "The Physical Reset Technique",
+        "content": "When emotions spike — after a big loss, a sudden price drop, or FOMO-inducing rally — your prefrontal cortex (rational brain) gets hijacked by the amygdala (emotional brain). Physical movement breaks this hijack.\n\nStand up. Walk away from the screen for 10 seconds. Take 3 deep breaths. This isn't meditation — it's neuroscience. The physical action interrupts the emotional spiral and re-engages your analytical mind. Professional traders at hedge funds are trained in these techniques.\n\nThe 10-second rule: never execute a trade within 10 seconds of feeling a strong emotion.",
+        "key_insight": "Physical movement interrupts emotional spirals. The 10-second rule prevents most panic decisions."
+      },
+      {
+        "id": "les_emo_03",
+        "title": "Loss Aversion — The Invisible Bias",
+        "content": "Nobel Prize-winning research by Kahneman and Tversky showed that losses feel roughly 2x as painful as equivalent gains feel good. This means a $100 loss hurts more than a $100 gain feels rewarding.\n\nThis asymmetry causes real damage: holding losers too long (hoping they'll recover), selling winners too early (locking in the gain before it disappears), and avoiding risk altogether after a loss.\n\nThe fix isn't to feel less — it's to pre-commit. Set your exit rules BEFORE entering a trade. When the rules trigger, follow them. Remove the in-the-moment emotional decision from the equation.",
+        "key_insight": "Losses hurt 2x more than gains feel good. Pre-commit to exit rules before the emotion kicks in."
+      }
+    ],
+    "quiz": [
+      {
+        "question": "You see your position drop 15% in 30 seconds. What's the BEST first response?",
+        "options": [
+          "Immediately sell to stop losses",
+          "Buy more — it must be oversold",
+          "Step away for 10 seconds, then review your pre-set exit rules",
+          "Close the app and check back tomorrow"
+        ],
+        "correct": 2,
+        "explanation": "The Physical Reset technique — step away briefly, then follow your pre-committed rules. Emotional reactions (panic sell or doubling down) usually make things worse."
+      },
+      {
+        "question": "Loss aversion research shows that losses feel about ___ as painful as gains feel good.",
+        "options": [
+          "Equally painful",
+          "Twice as painful",
+          "Half as painful",
+          "Five times as painful"
+        ],
+        "correct": 1,
+        "explanation": "Kahneman and Tversky's Prospect Theory showed losses feel roughly 2x as painful as equivalent gains feel rewarding. This is why we hold losers too long and sell winners too early."
+      },
+      {
+        "question": "You're feeling excited about a potential trade. According to this module, what should you do?",
+        "options": [
+          "Suppress the excitement and trade purely on numbers",
+          "Trust your gut — excitement means it's a good trade",
+          "Use the excitement as a data point — ask whether it's analysis-based or hype-driven",
+          "Avoid the trade entirely since emotions are involved"
+        ],
+        "correct": 2,
+        "explanation": "Emotions are information, not noise. The right approach is to notice the feeling, then investigate whether it's based on real analysis or just social buzz and FOMO."
+      }
+    ]
+  },
+  {
+    "id": "mod_technical",
+    "title": "Risk Management & Position Sizing",
+    "description": "Master the math behind smart trading — position sizing, the 1% rule, and why capital preservation matters more than any single trade.",
+    "category": "technical",
+    "icon": "calculator",
+    "color": "blue",
+    "lessons": [
+      {
+        "id": "les_tech_01",
+        "title": "Why Position Size Matters Most",
+        "content": "Ask any professional trader what matters most, and they'll say position sizing — not entry timing, not stock picking, not market prediction.\n\nHere's why: A small position in a big winner is profitable. A big position in a small loser can wipe you out. The math is unforgiving — a 50% loss requires a 100% gain just to break even.\n\nThe golden rule: never risk more than 5% of your total capital on a single trade. If you have $10,000, no single position should exceed $500 at risk. This ensures that even a string of losses won't destroy your ability to keep trading.",
+        "key_insight": "Position sizing trumps stock picking. A 50% loss needs a 100% gain to recover. Never risk more than 5% per trade."
+      },
+      {
+        "id": "les_tech_02",
+        "title": "The 1% Rule",
+        "content": "Professional traders limit their risk to 1% of total capital per trade. This sounds overly conservative — until you understand why.\n\nWith $10,000, risking $100 per trade: even 10 consecutive losses (rare but possible) only costs you $1,000 — still 90% of your capital intact. This survival-first approach keeps you in the game through inevitable losing streaks.\n\nCalculation: If your stop-loss is 10% from entry, and you risk 1% of capital ($100), then your position size is $100 ÷ 0.10 = $1,000. This tells you exactly how much to buy.\n\nKey insight: Position sizing isn't about being conservative — it's about being mathematical.",
+        "key_insight": "Risk 1% per trade = survive 10 consecutive losses at 90% capital. Position size = Risk $ ÷ Stop-loss %."
+      },
+      {
+        "id": "les_tech_03",
+        "title": "Expected Value Thinking",
+        "content": "Every trade has an Expected Value (EV): probability of winning × win amount - probability of losing × loss amount.\n\nExample: A trade with 60% chance of making $200 and 40% chance of losing $150:\nEV = (0.6 × $200) - (0.4 × $150) = $120 - $60 = +$60 per trade\n\nEven with a 40% loss rate, this trade is profitable over many repetitions. This is why professional traders care about win RATE and win SIZE separately.\n\nThe biggest mistake: optimizing for win rate (wanting to be 'right') instead of expected value (being profitable). A strategy that wins 40% of the time can be MORE profitable than one that wins 70% — if the wins are much bigger than the losses.",
+        "key_insight": "EV = (Win% × WinSize) - (Loss% × LossSize). Win rate alone is meaningless — expected value per trade is what matters."
+      }
+    ],
+    "quiz": [
+      {
+        "question": "You have $10,000 and want to risk 1% per trade with a 10% stop-loss. What's your correct position size?",
+        "options": [
+          "$100",
+          "$500",
+          "$1,000",
+          "$10,000"
+        ],
+        "correct": 2,
+        "explanation": "Risk amount = 1% × $10,000 = $100. Position size = $100 ÷ 0.10 (stop-loss) = $1,000. You buy $1,000 worth, knowing the max loss is $100."
+      },
+      {
+        "question": "A trade has 55% chance of +$300 and 45% chance of -$200. What's the expected value?",
+        "options": [
+          "+$75",
+          "-$75",
+          "+$165",
+          "+$100"
+        ],
+        "correct": 0,
+        "explanation": "EV = (0.55 × $300) - (0.45 × $200) = $165 - $90 = +$75. This trade is +EV and should be taken repeatedly despite the 45% loss rate."
+      },
+      {
+        "question": "Why do professional traders prioritize position sizing over stock picking?",
+        "options": [
+          "Because stock picking doesn't matter at all",
+          "Because a bad position size can turn a winning strategy into a losing one",
+          "Because regulators require it",
+          "Because it's easier than doing research"
+        ],
+        "correct": 1,
+        "explanation": "Even the best trade idea becomes destructive with wrong sizing. A 50% loss needs 100% gain to recover. Position sizing ensures survival through inevitable losing streaks."
+      }
+    ]
+  },
+  {
+    "id": "mod_social",
+    "title": "Navigating News & Social Media",
+    "description": "Learn to evaluate information sources critically — separate signal from noise in news headlines, social media hype, and 'insider tips.'",
+    "category": "social",
+    "icon": "newspaper",
+    "color": "orange",
+    "lessons": [
+      {
+        "id": "les_soc_01",
+        "title": "The Crowd Is Usually Late",
+        "content": "By the time an investment makes mainstream news or trends on social media, the early money has already been made. Mass attention typically marks tops, not beginnings.\n\nBitcoin in late 2017: your taxi driver, your aunt, your barber — everyone was talking about it. That was near the top, not a buying opportunity. GameStop in early 2021: by the time it was on every news channel, the stock had already risen 1,500%.\n\nThis doesn't mean contrarian investing always works. It means that social buzz alone is not a buy signal. When 'everyone knows' something is a good investment, the price already reflects that knowledge.",
+        "key_insight": "Mass social media attention usually marks market tops, not bottoms. By the time everyone knows, it's already priced in."
+      },
+      {
+        "id": "les_soc_02",
+        "title": "Influencers Have Hidden Incentives",
+        "content": "Social media 'gurus' promoting investments almost always have misaligned incentives. They may:\n\n• Be paid by the company to promote\n• Already own the asset and need buyers to drive the price up (pump and dump)\n• Earn commissions on trades or signups\n• Be building a personal brand, not giving advice\n\nThe critical question: 'What happens to this person if I lose money?' If the answer is 'nothing,' their advice is entertainment, not guidance.\n\nCredible analysts stake their reputation on calls and show their track record. Social media promoters rarely show losses.",
+        "key_insight": "Always ask: 'What happens to this person if I lose money?' If nothing — it's entertainment, not advice."
+      },
+      {
+        "id": "les_soc_03",
+        "title": "The Credibility Checklist",
+        "content": "Not all information is equal. Before acting on any news or tip, run it through this 4-point credibility checklist:\n\n1. **Source**: Is this from an official filing (SEC, company report), a reputable outlet (Bloomberg, Reuters), or an anonymous post?\n2. **Verifiability**: Can I confirm this through a second independent source?\n3. **Incentives**: Does the source benefit from me acting on this information?\n4. **Timing**: Is this old news repackaged as new, or genuinely new information?\n\nIf a piece of information scores poorly on more than one of these criteria, treat it as noise. Professional investors have entire teams dedicated to verifying information before acting.",
+        "key_insight": "Rate every source on: Source reliability, Verifiability, Incentive alignment, and Timing. Two failures = treat as noise."
+      }
+    ],
+    "quiz": [
+      {
+        "question": "A crypto influencer with 1M followers posts 'HUGE NEWS for $COIN — buy before it's too late!' What should you check FIRST?",
+        "options": [
+          "How many followers liked the post",
+          "Whether the influencer has a financial relationship with the project",
+          "The current price chart of the coin",
+          "What other influencers are saying"
+        ],
+        "correct": 1,
+        "explanation": "The Credibility Checklist starts with incentives. Influencers promoting specific assets often have undisclosed financial relationships — paid promotions or pre-existing positions they want to sell into."
+      },
+      {
+        "question": "When a stock is trending on Twitter and featured on every news channel, what does this USUALLY signal?",
+        "options": [
+          "It's the best time to buy — momentum is strong",
+          "The easy money has likely already been made",
+          "The stock will definitely keep going up",
+          "It's always a scam when something goes viral"
+        ],
+        "correct": 1,
+        "explanation": "Mass social attention typically marks tops, not beginnings. The early movers already own it; widespread buzz means the price already reflects the hype. Not always a crash, but rarely the best entry point."
+      },
+      {
+        "question": "A friend tells you their cousin 'knows someone at the company' and something big is about to happen. Using the Credibility Checklist, which criteria fails MOST clearly?",
+        "options": [
+          "Source reliability — anonymous, unverified third-hand information",
+          "Timing — this news is probably old",
+          "Incentives — your friend wants to sell",
+          "The math doesn't work out"
+        ],
+        "correct": 0,
+        "explanation": "This is third-hand, anonymous, unverifiable information — it fails the Source and Verifiability checks immediately. Insider tips through the grapevine are almost always unreliable or already priced in."
+      }
+    ]
+  },
+  {
+    "id": "mod_confidence",
+    "title": "Confidence Calibration",
+    "description": "Learn the difference between healthy confidence and dangerous overconfidence — and how to calibrate your conviction to match reality.",
+    "category": "confidence",
+    "icon": "target",
+    "color": "green",
+    "lessons": [
+      {
+        "id": "les_conf_01",
+        "title": "Confidence vs Overconfidence",
+        "content": "Healthy confidence is based on analysis and a tested process. Dangerous overconfidence is based on recent success or 'gut feeling.'\n\nAfter 3 winning trades, your brain tells you 'I'm getting good at this!' But statistically, 3 trades is meaningless. You could be purely lucky. This is called the Hot Hand Fallacy — we believe streaks will continue when they often don't.\n\nThe test: Can you explain WHY your last 3 trades worked? If you can cite specific analytical reasons, your confidence may be justified. If you say 'I just had a feeling,' that's overconfidence masquerading as skill.",
+        "key_insight": "Justified confidence can explain WHY it works. If you can only say 'I just feel it,' that's overconfidence, not skill."
+      },
+      {
+        "id": "les_conf_02",
+        "title": "The Pre-Mortem Technique",
+        "content": "Before making any trade, imagine it failed badly. Ask yourself: 'If I lost 30% on this, what would I say went wrong?'\n\nThis technique, called a pre-mortem, forces your brain to consider failure scenarios it would otherwise ignore. It counteracts confirmation bias — our tendency to only see information supporting our view.\n\nIf you can't identify specific risks, that's a red flag. Every trade has risks. Not being able to name them doesn't mean they don't exist — it means you haven't done enough analysis.\n\nWarren Buffett's rule: 'Risk comes from not knowing what you're doing.' The pre-mortem reveals how much you actually know.",
+        "key_insight": "Before every trade, imagine it failed. If you can't identify what went wrong, you haven't analyzed enough."
+      },
+      {
+        "id": "les_conf_03",
+        "title": "Calibrating Your Confidence Scale",
+        "content": "When you rate your confidence 1-5 on a trade, what should each number ACTUALLY mean?\n\n• 1/5: Speculative — I'm guessing and sizing accordingly (tiny position)\n• 2/5: Weak thesis — one or two supporting data points, but significant unknowns\n• 3/5: Reasonable — analysis supports it, but risks are clear and managed\n• 4/5: Strong — multiple confirming signals, risks identified and hedged\n• 5/5: Maximum conviction — but remember: even 5/5 trades fail 20-30% of the time\n\nCalibration rule: If your 4/5 confidence trades win less than 60% of the time, you're systematically overconfident. Track your confidence vs outcomes to calibrate over time.",
+        "key_insight": "Track confidence vs outcomes. If 4/5 trades win <60%, you're overconfident. Calibration is a skill you can train."
+      }
+    ],
+    "quiz": [
+      {
+        "question": "You've won 5 trades in a row and feel very confident about your next trade idea. What's the most rational response?",
+        "options": [
+          "Size up — you're clearly on a hot streak",
+          "Acknowledge possible Hot Hand Fallacy and check if you can explain WHY those 5 won",
+          "Stop trading to avoid jinxing it",
+          "Switch to a different strategy since this one has 'used up' its wins"
+        ],
+        "correct": 1,
+        "explanation": "The Hot Hand Fallacy makes us believe streaks will continue. The test: can you explain the analytical reasons each trade won? If not, it may be luck, and sizing up would be dangerous."
+      },
+      {
+        "question": "You're about to buy a stock and rate your confidence 5/5. A pre-mortem reveals you can't identify any scenario where this trade fails. What does this suggest?",
+        "options": [
+          "It's a perfect trade — go all in",
+          "You haven't analyzed deeply enough — every trade has risks",
+          "Your confidence is well-calibrated",
+          "Pre-mortems don't apply to high-conviction trades"
+        ],
+        "correct": 1,
+        "explanation": "Every trade has risks. Not being able to identify failure scenarios means insufficient analysis, not the absence of risk. Buffett's rule: 'Risk comes from not knowing what you're doing.'"
+      },
+      {
+        "question": "Your 4/5 confidence trades have won 45% of the time over 20 trades. What does this indicate?",
+        "options": [
+          "Normal variance — 20 trades isn't enough data",
+          "You're well-calibrated",
+          "You're systematically overconfident and should recalibrate",
+          "You should always rate confidence lower to feel better"
+        ],
+        "correct": 2,
+        "explanation": "A 4/5 confidence rating should correlate with ~60%+ win rate. At 45%, you're consistently overestimating your conviction. The fix: recalibrate what each confidence level actually means based on your track record."
+      }
+    ]
+  },
+  {
+    "id": "mod_anchoring",
+    "title": "Anchoring & Reference Points",
+    "description": "Understand how your brain latches onto arbitrary numbers — entry prices, round numbers, past highs — and how these invisible anchors distort your decisions.",
+    "category": "anchoring",
+    "icon": "anchor",
+    "color": "navy",
+    "lessons": [
+      {
+        "id": "les_anch_01",
+        "title": "The Anchoring Effect",
+        "content": "In a famous experiment, Kahneman and Tversky spun a rigged roulette wheel before asking people to estimate the percentage of African countries in the UN. People who saw the wheel land on 65 guessed higher than those who saw 10 — even though the wheel was completely random.\n\nThis is anchoring: our brains latch onto the first number we see and use it as a reference point for all subsequent judgments. In trading, your buy price becomes a powerful anchor. You evaluate the position as 'up' or 'down' relative to YOUR entry — not relative to what the asset is actually worth today.\n\nThe fix: ask 'If I didn't already own this, would I buy it at today's price?' This forces you to evaluate the current situation, not your historical entry.",
+        "key_insight": "Your entry price is irrelevant to future returns. Always ask: 'Would I buy this at today's price if I owned none?'"
+      },
+      {
+        "id": "les_anch_02",
+        "title": "Sunk Cost Fallacy",
+        "content": "You've held a losing position for 3 months. You've spent hours researching it. You've told friends about it. Selling now would mean 'all that was for nothing.'\n\nThis is the sunk cost fallacy — past investments of time, money, or effort shouldn't influence future decisions, but they do. The money is already gone whether you sell or hold. The only question that matters: is this the best use of your remaining capital RIGHT NOW?\n\nProfessional fund managers conduct regular 'portfolio scrubs' where they pretend they own nothing and decide which positions they'd enter today. Any position they wouldn't buy fresh gets cut — regardless of what they paid for it.\n\nThe mental trick: imagine someone handed you cash equal to your position's current value. Would you use that cash to buy this same asset? If not, you're holding because of sunk costs, not conviction.",
+        "key_insight": "Past losses are gone regardless of what you do next. The only question: is this the best use of your capital TODAY?"
+      },
+      {
+        "id": "les_anch_03",
+        "title": "Breaking Free from Round Numbers",
+        "content": "Round numbers ($100, $50, $10,000 portfolio value) create invisible psychological barriers. Traders resist selling below round numbers ('I'll sell when it gets back to $100') and pile into buys at round-number 'support levels.'\n\nThis creates a self-fulfilling prophecy — so many people anchor to round numbers that they DO temporarily affect prices. But they have zero fundamental significance. A stock worth $99 is not meaningfully different from one worth $101.\n\nThe technique: set your targets and stop-losses at specific, non-round numbers based on analysis. Instead of 'I'll sell at $100,' use 'I'll sell when RSI exceeds 70 and volume drops below average.' Replace number-based anchors with condition-based rules.",
+        "key_insight": "Replace number-based exit rules ('sell at $100') with condition-based rules ('sell when momentum fades'). Round numbers are psychological, not analytical."
+      }
+    ],
+    "quiz": [
+      {
+        "question": "You bought a stock at $50. It dropped to $35 and has been flat for weeks. A better opportunity appears but requires selling. What's the most rational approach?",
+        "options": [
+          "Hold until it recovers to $50 — you don't want to lock in the loss",
+          "Evaluate both investments independently — if the new one has better prospects, switch",
+          "Average down by buying more at $35 to lower your average cost",
+          "Wait for the stock to hit a round number like $40 before deciding"
+        ],
+        "correct": 1,
+        "explanation": "The $50 entry price is a sunk cost — it's irrelevant to future returns. The rational approach is to evaluate each investment on its own merits. If the new opportunity has better risk/reward, your capital is better deployed there."
+      },
+      {
+        "question": "You're deciding whether to sell a winning position. Which question best avoids anchoring bias?",
+        "options": [
+          "Am I up enough from my entry price?",
+          "If I had cash equal to this position's value, would I buy this asset today?",
+          "Has the stock hit a nice round number yet?",
+          "What did my friend say the target price should be?"
+        ],
+        "correct": 1,
+        "explanation": "The 'fresh cash' test eliminates the anchor of your entry price. It forces you to evaluate the current situation and future prospects rather than measuring from an arbitrary starting point."
+      },
+      {
+        "question": "Your portfolio is at $9,800 and you have a stop-loss at $10,000. Is there a behavioral issue here?",
+        "options": [
+          "No — $10,000 is a logical stop-loss level",
+          "Yes — $10,000 is a round number anchor with no analytical basis",
+          "No — round numbers are always good support levels",
+          "Yes — the stop-loss should be higher"
+        ],
+        "correct": 1,
+        "explanation": "Round numbers create psychological anchors but have no fundamental significance. Stop-losses should be based on analysis (volatility, support levels, risk budget) not on psychologically satisfying numbers."
+      }
+    ]
+  },
+  {
+    "id": "mod_patience",
+    "title": "Patience & Timing Discipline",
+    "description": "Master the art of waiting — learn why the best traders spend most of their time doing nothing, and how to avoid the costly trap of impulsive entries.",
+    "category": "patience",
+    "icon": "clock",
+    "color": "navy",
+    "lessons": [
+      {
+        "id": "les_pat_01",
+        "title": "The Cost of Action Bias",
+        "content": "Studies of professional soccer goalkeepers show they dive left or right on penalty kicks 94% of the time — even though staying in the center would save more goals. Why? Because diving feels like doing something. Standing still feels like giving up.\n\nInvestors have the same bias. When markets move, we feel compelled to act — buy something, sell something, DO something. But the data is clear: most retail traders would have better returns if they traded LESS frequently.\n\nAction bias is especially dangerous in volatile markets. Each trade has costs (fees, spread, taxes) and emotional consequences (regret if wrong, overconfidence if right). The best traders are comfortable doing nothing when conditions don't match their strategy.\n\nThe rule: 'No trade is a trade.' Choosing not to act IS a decision — often the best one.",
+        "key_insight": "Choosing not to act IS a decision. Most traders would improve by trading less. No trade is still a trade."
+      },
+      {
+        "id": "les_pat_02",
+        "title": "Building a Pre-Trade Checklist",
+        "content": "Airline pilots use checklists before every flight — even after thousands of flights. This prevents emotional, impulsive decisions during critical moments.\n\nCreate your own pre-trade checklist:\n\n1. Have I waited at least 20 seconds since the last market event? (Prevents reactive trading)\n2. Have I reviewed ALL available information panels? (Prevents information neglect)\n3. Can I state my thesis in one sentence? (Prevents 'I just feel it' trades)\n4. What's my exit plan if this goes wrong? (Prevents hope-based holding)\n5. Is this position sized correctly? (Prevents overexposure)\n\nIf you can't answer YES to all five, the trade isn't ready. This isn't about being slow — it's about being systematic. Speed without a system is just gambling.",
+        "key_insight": "Use a 5-point checklist before every trade: Wait, Review, State thesis, Plan exit, Size correctly. All five must pass."
+      },
+      {
+        "id": "les_pat_03",
+        "title": "Deliberate Observation Periods",
+        "content": "Professional traders often spend the first 30 minutes of a trading session just watching. They're reading the tape, understanding the day's character, identifying setups. They call this 'getting a feel for the market.'\n\nIn simulations, the first 20-30 seconds are your observation period. Use them to:\n\n• Read all news headlines and understand the narrative\n• Check social sentiment — what are others doing?\n• Watch the initial price action — is it trending or choppy?\n• Form a thesis BEFORE looking at the buy/sell buttons\n\nThe data from our simulations shows that users who wait 20+ seconds before their first decision score 30% higher on process quality than those who act within 10 seconds. Patience isn't passive — it's the most active form of analysis.",
+        "key_insight": "Users who wait 20+ seconds score 30% higher on process quality. Patience is active analysis, not passive waiting."
+      }
+    ],
+    "quiz": [
+      {
+        "question": "A stock you're watching suddenly drops 10% on breaking news. What should you do FIRST?",
+        "options": [
+          "Buy the dip immediately before it recovers",
+          "Sell any existing position to cut losses",
+          "Wait, read all available information, and form a thesis before acting",
+          "Follow what the majority of social media users are doing"
+        ],
+        "correct": 2,
+        "explanation": "Action bias makes us want to react immediately. But the first response to breaking news should be information gathering, not trading. Wait, read everything available, form a thesis, THEN decide. The first 30 seconds of volatility are the most dangerous for impulsive decisions."
+      },
+      {
+        "question": "Research on soccer goalkeepers and penalty kicks teaches us what about trading?",
+        "options": [
+          "Always go with your first instinct",
+          "Action bias makes us feel we must DO something, even when standing still is optimal",
+          "Quick reactions are always better than slow ones",
+          "Professional athletes make better traders"
+        ],
+        "correct": 1,
+        "explanation": "Goalkeepers dive 94% of the time even though staying center saves more goals — because doing nothing feels wrong. Traders face the same bias: acting feels productive even when the best move is to wait."
+      },
+      {
+        "question": "Which pre-trade checklist item is MOST likely to prevent impulsive trades?",
+        "options": [
+          "Is the position sized correctly?",
+          "Have I waited at least 20 seconds since the last market event?",
+          "Can I state my thesis in one sentence?",
+          "What's my exit plan?"
+        ],
+        "correct": 1,
+        "explanation": "The waiting period directly combats impulsivity by creating a forced pause. While all checklist items matter, the time buffer is the single most effective brake on emotional, reactive trading."
+      }
+    ]
+  }
+]

@@ -1,0 +1,162 @@
+[
+  {
+    "id": "card_fomo_01",
+    "title": "Recognizing FOMO",
+    "content": "FOMO (Fear of Missing Out) is one of the most powerful psychological forces in investing. It makes us buy at the worst times - when prices are already high and everyone is excited.",
+    "category": "fomo",
+    "difficulty": 1,
+    "example": "You see a stock up 50% this week. Twitter is buzzing. Your friend just made money on it. You feel the urge to buy NOW before it goes higher. This is FOMO.",
+    "key_takeaway": "When everyone is excited, that's often when smart money is selling. The time to buy was before the excitement.",
+    "related_patterns": ["fomo", "social_proof_reliance", "impulsivity"]
+  },
+  {
+    "id": "card_fomo_02",
+    "title": "The FOMO Test",
+    "content": "Before any trade, ask yourself: 'Would I make this same decision if no one else was talking about this?' If the answer is no, you might be experiencing FOMO.",
+    "category": "fomo",
+    "difficulty": 2,
+    "example": "A crypto is trending on social media. Apply the FOMO test: Without the social buzz, does this investment make sense based on fundamentals alone?",
+    "key_takeaway": "Good investments should make sense in isolation, not just because others are doing it.",
+    "related_patterns": ["fomo", "social_proof_reliance"]
+  },
+  {
+    "id": "card_patience_01",
+    "title": "The Power of Waiting",
+    "content": "The first 30 seconds of any investment decision are the most dangerous. Your brain hasn't processed the information - it's just reacting to stimuli.",
+    "category": "patience",
+    "difficulty": 1,
+    "example": "Breaking news hits. Your instinct says 'ACT NOW!' But the best traders wait. They gather information, assess the situation, and then decide.",
+    "key_takeaway": "Speed is rarely an advantage in investing. The market will still be there in 30 seconds.",
+    "related_patterns": ["impulsivity", "fomo"]
+  },
+  {
+    "id": "card_patience_02",
+    "title": "Decision Cooling Periods",
+    "content": "Professional traders often impose mandatory waiting periods before executing trades. This prevents emotional decisions disguised as urgent opportunities.",
+    "category": "patience",
+    "difficulty": 2,
+    "example": "Rule: 'I will not make any trade within 60 seconds of seeing news or price movement.' This simple rule prevents most impulsive mistakes.",
+    "key_takeaway": "Build in deliberate delays to your decision process. What feels urgent rarely is.",
+    "related_patterns": ["impulsivity", "fomo", "emotional_control"]
+  },
+  {
+    "id": "card_loss_01",
+    "title": "Understanding Loss Aversion",
+    "content": "Studies show losses feel roughly twice as painful as equivalent gains feel good. This asymmetry causes us to make poor decisions to avoid the pain of losing.",
+    "category": "loss_aversion",
+    "difficulty": 1,
+    "example": "A stock you own drops 10%. You feel terrible and want to sell to 'stop the bleeding.' But you wouldn't feel equally excited about a 10% gain.",
+    "key_takeaway": "Recognize that your emotional response to losses is exaggerated. This awareness alone helps make better decisions.",
+    "related_patterns": ["loss_aversion", "emotional_control"]
+  },
+  {
+    "id": "card_loss_02",
+    "title": "Losses Are Part of Investing",
+    "content": "Even the best investors are wrong 40-45% of the time. The goal isn't to never lose - it's to have your wins be bigger than your losses over time.",
+    "category": "loss_aversion",
+    "difficulty": 2,
+    "example": "A trader wins 4 trades (+$100 each = +$400) and loses 6 trades (-$50 each = -$300). Net: +$100. More losses than wins, still profitable.",
+    "key_takeaway": "Focus on the math of your overall strategy, not on avoiding every individual loss.",
+    "related_patterns": ["loss_aversion", "overconfidence"]
+  },
+  {
+    "id": "card_risk_01",
+    "title": "Position Sizing Basics",
+    "content": "The size of your position matters more than the direction. A small position in a big winner is better than a big position in a small loser that wipes you out.",
+    "category": "risk_management",
+    "difficulty": 1,
+    "example": "Never risk more than 5% of your capital on a single trade. If you have $10,000, no single position should risk more than $500.",
+    "key_takeaway": "Protect your capital above all else. You can't recover from zero.",
+    "related_patterns": ["overconfidence", "risk_management"]
+  },
+  {
+    "id": "card_risk_02",
+    "title": "The 1% Rule",
+    "content": "Professional traders often limit their risk to 1% of total capital per trade. This ensures survival through inevitable losing streaks.",
+    "category": "risk_management",
+    "difficulty": 2,
+    "example": "With $10,000, risk maximum $100 per trade. If you hit 10 losses in a row (rare but possible), you've only lost 10% of your capital.",
+    "key_takeaway": "Survival is the priority. Small, consistent risks allow you to stay in the game long enough to learn.",
+    "related_patterns": ["risk_management", "overconfidence"]
+  },
+  {
+    "id": "card_analysis_01",
+    "title": "Information Before Action",
+    "content": "Before any decision, identify at least 3 pieces of information you should check. News, price trends, and sentiment are a good starting trio.",
+    "category": "analysis",
+    "difficulty": 1,
+    "example": "Before buying: What's the recent news? Is the price trend up, down, or sideways? What's the general market sentiment?",
+    "key_takeaway": "Create a mental checklist. Don't act until you've checked all boxes.",
+    "related_patterns": ["impulsivity", "information_neglect"]
+  },
+  {
+    "id": "card_analysis_02",
+    "title": "Seek Disconfirming Evidence",
+    "content": "We naturally seek information that confirms our existing beliefs. Fight this by actively looking for reasons your trade idea might be wrong.",
+    "category": "analysis",
+    "difficulty": 2,
+    "example": "You're bullish on a stock. Force yourself to find 3 reasons it might go down. If you can't find any, you haven't looked hard enough.",
+    "key_takeaway": "The best analysis actively seeks to prove itself wrong.",
+    "related_patterns": ["confirmation_bias", "overconfidence"]
+  },
+  {
+    "id": "card_emotions_01",
+    "title": "Emotions as Information",
+    "content": "Feeling excited? That might mean you're about to make an impulsive decision. Feeling scared? That might mean there's real risk to consider - or opportunity.",
+    "category": "emotional_control",
+    "difficulty": 1,
+    "example": "Notice: 'I'm feeling excited about this trade.' Then ask: 'Is this excitement based on analysis or hype?'",
+    "key_takeaway": "Don't suppress emotions - use them as data. Strong feelings often signal something important.",
+    "related_patterns": ["impulsivity", "fomo", "loss_aversion"]
+  },
+  {
+    "id": "card_emotions_02",
+    "title": "The Physical Reset",
+    "content": "When emotions run high, physical actions can break the pattern. Stand up, take a breath, look away from the screen for 10 seconds.",
+    "category": "emotional_control",
+    "difficulty": 1,
+    "example": "You just saw your position drop 15% in seconds. Instead of panic-selling, stand up, walk to the window, take 3 deep breaths, then return.",
+    "key_takeaway": "Physical movement interrupts emotional spirals and engages the rational brain.",
+    "related_patterns": ["impulsivity", "loss_aversion", "emotional_control"]
+  },
+  {
+    "id": "card_social_01",
+    "title": "The Crowd Is Often Wrong",
+    "content": "By the time everyone is talking about an investment, the easy money has usually been made. Mass attention often marks tops, not beginnings.",
+    "category": "social_proof",
+    "difficulty": 2,
+    "example": "Bitcoin in late 2017: Everyone was talking about it. Your taxi driver had some. That was near the top, not the bottom.",
+    "key_takeaway": "Be suspicious of investments that 'everyone' is excited about.",
+    "related_patterns": ["social_proof_reliance", "fomo"]
+  },
+  {
+    "id": "card_social_02",
+    "title": "Influencers Aren't Advisors",
+    "content": "Social media influencers often have hidden incentives. They may be paid to promote, or they bought earlier and need you to buy so they can sell.",
+    "category": "social_proof",
+    "difficulty": 2,
+    "example": "A famous person tweets about a stock. Ask: 'When did they buy? Are they being paid? What happens to them if I lose money?'",
+    "key_takeaway": "Always ask about incentives. Someone promoting an investment might not have your interests at heart.",
+    "related_patterns": ["social_proof_reliance", "fomo"]
+  },
+  {
+    "id": "card_confidence_01",
+    "title": "Confidence vs Overconfidence",
+    "content": "Confidence based on analysis is healthy. Confidence based on recent success or 'feeling it' is dangerous. Learn to tell the difference.",
+    "category": "overconfidence",
+    "difficulty": 2,
+    "example": "After 3 winning trades: 'I'm getting good at this!' Reality: 3 trades is statistically meaningless. You might have just been lucky.",
+    "key_takeaway": "True confidence comes from process, not results. A good process will be confident even after losses.",
+    "related_patterns": ["overconfidence", "recency_bias"]
+  },
+  {
+    "id": "card_confidence_02",
+    "title": "The Pre-Mortem",
+    "content": "Before making a trade, imagine it failed badly. Ask: 'If I lose 30% on this, what would I say went wrong?' If you can't answer, reconsider.",
+    "category": "overconfidence",
+    "difficulty": 3,
+    "example": "I'm about to buy NEWCO. Pre-mortem: 'If this fails, it would be because I didn't understand their business model or the market was overheated.'",
+    "key_takeaway": "Imagining failure before it happens helps identify risks you might be ignoring.",
+    "related_patterns": ["overconfidence", "confirmation_bias"]
+  }
+]

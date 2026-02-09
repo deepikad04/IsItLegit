@@ -1,0 +1,476 @@
+from typing import Annotated
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
+
+from database import get_db
+from models.user import User
+from models.simulation import Simulation
+from models.decision import Decision
+from routers.auth import get_current_user
+from models.behavior_profile import BehaviorProfile
+from services.gemini_service import GeminiService
+from schemas.reflection import (
+    ReflectionResponse,
+    Counterfactual,
+    WhyThisDecisionResponse,
+    ProComparisonResponse,
+)
+
+router = APIRouter(prefix="/api/reflection", tags=["reflection"])
+
+
+@router.get("/{simulation_id}", response_model=ReflectionResponse)
+async def get_reflection(
+    simulation_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
+):
+    """Get full reflection analysis for a completed simulation."""
+    simulation = db.query(Simulation).filter(
+        Simulation.id == simulation_id,
+        Simulation.user_id == current_user.id
+    ).first()
+
+    if not simulation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Simulation not found"
+        )
+
+    if simulation.status != "completed":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Simulation must be completed to get reflection"
+        )
+
+    # Check if analysis already exists
+    if simulation.gemini_analysis:
+        return ReflectionResponse(**simulation.gemini_analysis)
+
+    # Get decisions for analysis
+    decisions = db.query(Decision).filter(
+        Decision.simulation_id == simulation_id
+    ).order_by(Decision.simulation_time).all()
+
+    # Generate analysis with Gemini service
+    gemini = GeminiService()
+    analysis = await gemini.analyze_simulation(
+        simulation=simulation,
+        decisions=decisions,
+        scenario=simulation.scenario
+    )
+
+    # Store analysis (mode='json' ensures UUIDs are serialized as strings)
+    simulation.gemini_analysis = analysis.model_dump(mode='json')
+    db.commit()
+
+    return analysis
+
+
+@router.get("/{simulation_id}/counterfactuals", response_model=list[Counterfactual])
+async def get_counterfactuals(
+    simulation_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
+):
+    """Get counterfactual alternate timelines for a simulation."""
+    simulation = db.query(Simulation).filter(
+        Simulation.id == simulation_id,
+        Simulation.user_id == current_user.id
+    ).first()
+
+    if not simulation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Simulation not found"
+        )
+
+    if simulation.status != "completed":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Simulation must be completed"
+        )
+
+    # Check if counterfactuals already exist
+    if simulation.counterfactuals:
+        return [Counterfactual(**cf) for cf in simulation.counterfactuals]
+
+    # Get decisions
+    decisions = db.query(Decision).filter(
+        Decision.simulation_id == simulation_id
+    ).order_by(Decision.simulation_time).all()
+
+    # Generate counterfactuals
+    gemini = GeminiService()
+    counterfactuals = await gemini.generate_counterfactuals(
+        simulation=simulation,
+        decisions=decisions,
+        scenario=simulation.scenario
+    )
+
+    # Store
+    simulation.counterfactuals = [cf.model_dump(mode='json') for cf in counterfactuals]
+    db.commit()
+
+    return counterfactuals
+
+
+@router.get("/{simulation_id}/quick-summary")
+async def get_quick_summary(
+    simulation_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
+):
+    """Get a quick summary without full Gemini analysis."""
+    simulation = db.query(Simulation).filter(
+        Simulation.id == simulation_id,
+        Simulation.user_id == current_user.id
+    ).first()
+
+    if not simulation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Simulation not found"
+        )
+
+    if simulation.status != "completed":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Simulation must be completed"
+        )
+
+    decisions = db.query(Decision).filter(
+        Decision.simulation_id == simulation_id
+    ).all()
+
+    outcome = simulation.final_outcome or {}
+
+    return {
+        "simulation_id": simulation.id,
+        "outcome": outcome.get("profit_loss", 0),
+        "outcome_percent": outcome.get("profit_loss_percent", 0),
+        "process_quality_score": simulation.process_quality_score,
+        "total_decisions": len(decisions),
+        "time_taken": simulation.current_time_elapsed,
+        "scenario_name": simulation.scenario.name
+    }
+
+
+# ── Helper: persist to gemini_cache ─────────────────────────────────
+
+def _get_cached(simulation, key):
+    """Return cached Gemini result from DB if available."""
+    cache = simulation.gemini_cache or {}
+    return cache.get(key)
+
+
+def _set_cached(simulation, key, data, db):
+    """Persist a Gemini result to the gemini_cache JSONB column."""
+    import json
+
+    # Ensure data is JSON-serializable (handles UUID, datetime, etc.)
+    safe_data = json.loads(json.dumps(data, default=str))
+
+    if not simulation.gemini_cache:
+        simulation.gemini_cache = {}
+    simulation.gemini_cache[key] = safe_data
+    flag_modified(simulation, "gemini_cache")
+    db.commit()
+
+
+# ── Helper to load simulation + decisions with auth check ─────────────
+
+async def _load_completed_simulation(
+    simulation_id: UUID,
+    current_user: User,
+    db: Session,
+):
+    """Shared helper: load simulation, check ownership and completion."""
+    simulation = db.query(Simulation).filter(
+        Simulation.id == simulation_id,
+        Simulation.user_id == current_user.id
+    ).first()
+
+    if not simulation:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Simulation not found")
+    if simulation.status != "completed":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Simulation must be completed")
+
+    decisions = db.query(Decision).filter(
+        Decision.simulation_id == simulation_id
+    ).order_by(Decision.simulation_time).all()
+
+    return simulation, decisions
+
+
+@router.get("/{simulation_id}/why", response_model=WhyThisDecisionResponse)
+async def why_this_decision(
+    simulation_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
+):
+    """'Why this decision?' — Gemini explains detected biases using the user's actual actions."""
+    simulation, decisions = await _load_completed_simulation(simulation_id, current_user, db)
+
+    # Check DB cache first
+    cached = _get_cached(simulation, "why")
+    if cached:
+        return WhyThisDecisionResponse(**cached)
+
+    gemini = GeminiService()
+    result = await gemini.explain_decisions(
+        simulation=simulation,
+        decisions=decisions,
+        scenario=simulation.scenario,
+    )
+
+    _set_cached(simulation, "why", result.model_dump(mode='json'), db)
+    return result
+
+
+@router.get("/{simulation_id}/pro-comparison")
+async def pro_comparison(
+    simulation_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
+):
+    """'What would a pro do?' — side-by-side comparison with an expert decision path."""
+    simulation, decisions = await _load_completed_simulation(simulation_id, current_user, db)
+
+    # Check DB cache first
+    cached = _get_cached(simulation, "pro_comparison")
+    if cached:
+        return cached
+
+    gemini = GeminiService()
+    result = await gemini.compare_with_pro(
+        simulation=simulation,
+        decisions=decisions,
+        scenario=simulation.scenario,
+    )
+
+    # Attach price history for the ProReplayChart
+    from services.simulation_engine import SimulationEngine
+    engine = SimulationEngine(simulation.scenario)
+    time_limit = simulation.scenario.time_pressure_seconds
+    price_history = [
+        {"time": t, "price": round(engine.price_timeline.get(t, 0), 2)}
+        for t in range(0, time_limit + 1, max(1, time_limit // 60))
+    ]
+
+    data = result.model_dump(mode='json')
+    data["price_history"] = price_history
+
+    _set_cached(simulation, "pro_comparison", data, db)
+    return data
+
+
+@router.get("/{simulation_id}/coaching")
+async def get_coaching(
+    simulation_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
+):
+    """Personalized coaching that adapts based on the user's behavior profile history."""
+    simulation, decisions = await _load_completed_simulation(simulation_id, current_user, db)
+
+    # Check DB cache first
+    cached = _get_cached(simulation, "coaching")
+    if cached:
+        return cached
+
+    # Load behavior profile for personalization
+    profile = db.query(BehaviorProfile).filter(
+        BehaviorProfile.user_id == current_user.id
+    ).first()
+
+    profile_data = profile.profile_data if profile else None
+
+    gemini = GeminiService()
+    persona, _ = gemini._determine_persona(profile_data)
+    coaching_message = await gemini.generate_coaching(
+        simulation=simulation,
+        decisions=decisions,
+        scenario=simulation.scenario,
+        behavior_profile=profile_data,
+    )
+
+    # Also update behavior profile with data from this simulation
+    updated_profile = await gemini.update_behavior_profile(
+        user_id=str(current_user.id),
+        simulation=simulation,
+        decisions=decisions,
+        scenario=simulation.scenario,
+        existing_profile=profile_data,
+    )
+
+    # Persist updated profile
+    if profile:
+        profile.profile_data = updated_profile
+        profile.total_simulations_analyzed += 1
+    else:
+        from datetime import datetime
+        profile = BehaviorProfile(
+            user_id=current_user.id,
+            profile_data=updated_profile,
+            total_simulations_analyzed=1,
+            last_updated=datetime.utcnow(),
+        )
+        db.add(profile)
+
+    result = {
+        "coaching_message": coaching_message,
+        "persona": persona,
+        "profile_updated": True,
+    }
+
+    _set_cached(simulation, "coaching", result, db)
+    return result
+
+
+@router.get("/{simulation_id}/full")
+async def get_full_reflection(
+    simulation_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+):
+    """Get reflection + counterfactuals + coaching in one shot (single Gemini call)."""
+    simulation, decisions = await _load_completed_simulation(simulation_id, current_user, db)
+
+    # Return cached if available
+    if simulation.gemini_analysis and simulation.counterfactuals:
+        return {
+            "reflection": simulation.gemini_analysis,
+            "counterfactuals": simulation.counterfactuals,
+            "coaching_message": simulation.gemini_analysis.get("coaching_message"),
+            "persona": simulation.gemini_analysis.get("persona", "supportive"),
+        }
+
+    profile = db.query(BehaviorProfile).filter(
+        BehaviorProfile.user_id == current_user.id
+    ).first()
+
+    gemini = GeminiService()
+    result = await gemini.batch_analyze(
+        simulation=simulation,
+        decisions=decisions,
+        scenario=simulation.scenario,
+        behavior_profile=profile.profile_data if profile else None,
+    )
+
+    # Persist
+    simulation.gemini_analysis = result["reflection"]
+    simulation.counterfactuals = result["counterfactuals"]
+    db.commit()
+
+    return result
+
+
+@router.get("/{simulation_id}/bias-heatmap")
+async def get_bias_heatmap(
+    simulation_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+):
+    """Bias intensity timeline across all decision points."""
+    simulation, decisions = await _load_completed_simulation(simulation_id, current_user, db)
+
+    # Check DB cache first
+    cached = _get_cached(simulation, "bias_heatmap")
+    if cached:
+        return cached
+
+    gemini = GeminiService()
+    result = await gemini.analyze_bias_timeline(
+        simulation=simulation,
+        decisions=decisions,
+        scenario=simulation.scenario,
+    )
+
+    # result could be a Pydantic model or dict
+    data = result.model_dump(mode='json') if hasattr(result, 'model_dump') else result
+    _set_cached(simulation, "bias_heatmap", data, db)
+    return result
+
+
+@router.get("/{simulation_id}/rationale-review")
+async def review_rationales(
+    simulation_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+):
+    """Gemini critiques the user's stated rationales for each decision."""
+    simulation, decisions = await _load_completed_simulation(simulation_id, current_user, db)
+
+    decisions_with_rationale = [d for d in decisions if d.rationale]
+    if not decisions_with_rationale:
+        return {"reviews": [], "summary": "No rationales were provided during this simulation.", "overall_reasoning_quality": 3}
+
+    # Check DB cache first
+    cached = _get_cached(simulation, "rationale_review")
+    if cached:
+        return cached
+
+    gemini = GeminiService()
+    result = await gemini.review_rationales(
+        simulation=simulation,
+        decisions=decisions_with_rationale,
+        scenario=simulation.scenario,
+    )
+
+    data = result.model_dump(mode='json') if hasattr(result, 'model_dump') else result
+    _set_cached(simulation, "rationale_review", data, db)
+    return result
+
+
+@router.get("/{simulation_id}/calibration")
+async def get_calibration(
+    simulation_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+):
+    """Confidence calibration score — did confidence match outcomes?"""
+    simulation, decisions = await _load_completed_simulation(simulation_id, current_user, db)
+
+    from services.simulation_engine import SimulationEngine
+    engine = SimulationEngine(simulation.scenario)
+    return engine.get_calibration_report(decisions)
+
+
+@router.get("/{simulation_id}/outcome-distribution")
+async def get_outcome_distribution(
+    simulation_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+):
+    """Monte Carlo outcome distribution — same decisions, 100 different markets."""
+    simulation, decisions = await _load_completed_simulation(simulation_id, current_user, db)
+
+    from services.simulation_engine import SimulationEngine
+    engine = SimulationEngine(simulation.scenario)
+    return engine.monte_carlo_outcomes(decisions, n=100)
+
+
+@router.get("/{simulation_id}/counterfactual-isolation")
+async def counterfactual_isolation(
+    simulation_id: UUID,
+    decision_index: int = Query(..., ge=0, description="Which decision to isolate"),
+    current_user: Annotated[User, Depends(get_current_user)] = None,
+    db: Session = Depends(get_db),
+):
+    """Show causal impact of changing a single decision."""
+    simulation, decisions = await _load_completed_simulation(simulation_id, current_user, db)
+
+    if decision_index >= len(decisions):
+        raise HTTPException(status_code=400, detail="Invalid decision index")
+
+    gemini = GeminiService()
+    return await gemini.isolate_counterfactual(
+        simulation=simulation,
+        decisions=decisions,
+        scenario=simulation.scenario,
+        target_decision_index=decision_index,
+    )

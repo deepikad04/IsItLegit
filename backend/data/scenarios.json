@@ -1,0 +1,373 @@
+[
+  {
+    "name": "The Next Big Thing",
+    "description": "A new cryptocurrency called HYPECOIN is trending on social media. Everyone seems to be talking about it. You have $10,000 to invest. Will you ride the wave or wait for more information?",
+    "difficulty": 2,
+    "category": "fomo_trap",
+    "time_pressure_seconds": 180,
+    "unlock_requirements": null,
+    "initial_data": {
+      "asset": "HYPECOIN",
+      "price": 0.50,
+      "your_balance": 10000,
+      "market_sentiment": "bullish",
+      "price_history": [0.35, 0.38, 0.42, 0.45, 0.48, 0.50],
+      "news_headlines": [
+        {"time": 0, "content": "New crypto project gains traction on social media", "type": "neutral"}
+      ],
+      "social_signals": [
+        {"time": 0, "content": "This coin is going to the moon! 🚀", "sentiment": "bullish"},
+        {"time": 0, "content": "Just bought my first HYPECOIN!", "sentiment": "bullish"}
+      ],
+      "market_params": {
+        "fixed_fee": 1.0,
+        "pct_fee": 0.001,
+        "base_spread_pct": 0.005,
+        "volume_per_tick": 2000,
+        "max_trade_per_tick": 1000,
+        "news_latency_enabled": true,
+        "time_pressure_fills": true,
+        "crowd_model_enabled": true,
+        "volatility_clustering": true,
+        "vol_params": {"base_vol": 0.02, "persistence": 0.85, "shock_prob": 0.02, "shock_multiplier": 2.5}
+      }
+    },
+    "events": [
+      {"time": 15, "type": "social", "content": "Celebrity influencer just tweeted about HYPECOIN! 🔥"},
+      {"time": 25, "type": "price", "change": 0.20},
+      {"time": 40, "type": "news", "content": "BREAKING: Major exchange listing rumored for HYPECOIN", "unverified": true, "latency": 3},
+      {"time": 55, "type": "social", "content": "Everyone's buying! Don't miss out! FOMO is real! 📈"},
+      {"time": 70, "type": "price", "change": 0.15},
+      {"time": 90, "type": "social", "content": "This is just the beginning. $10 by end of week!"},
+      {"time": 110, "type": "price", "change": -0.10},
+      {"time": 130, "type": "news", "content": "Exchange listing rumor DEBUNKED - no official announcement"},
+      {"time": 145, "type": "price", "change": -0.35},
+      {"time": 160, "type": "social", "content": "Whale alert: Large holder just dumped their position"},
+      {"time": 170, "type": "price", "change": -0.20}
+    ]
+  },
+  {
+    "name": "The Steady Climb",
+    "description": "TECHGROW stock has been slowly but steadily increasing over the past month. It's not exciting, but it's consistent. The question is: is the best already over, or is there more room to grow?",
+    "difficulty": 1,
+    "category": "patience_test",
+    "time_pressure_seconds": 180,
+    "unlock_requirements": null,
+    "initial_data": {
+      "asset": "TECHGROW",
+      "price": 45.00,
+      "your_balance": 10000,
+      "market_sentiment": "neutral",
+      "price_history": [38.00, 39.50, 41.00, 42.50, 44.00, 45.00],
+      "news_headlines": [
+        {"time": 0, "content": "Tech sector continues steady growth amid market stability", "type": "neutral"}
+      ],
+      "social_signals": [
+        {"time": 0, "content": "Boring but reliable. Classic value play.", "sentiment": "neutral"}
+      ],
+      "market_params": {
+        "fixed_fee": 0.50,
+        "pct_fee": 0.001,
+        "base_spread_pct": 0.002,
+        "volume_per_tick": 5000,
+        "max_trade_per_tick": 2000,
+        "time_pressure_fills": true,
+        "news_latency_enabled": true,
+        "crowd_model_enabled": true
+      }
+    },
+    "events": [
+      {"time": 20, "type": "price", "change": 0.02},
+      {"time": 40, "type": "news", "content": "Analyst upgrades TECHGROW to 'buy' rating"},
+      {"time": 50, "type": "price", "change": 0.03},
+      {"time": 70, "type": "social", "content": "Slow and steady wins the race 🐢"},
+      {"time": 90, "type": "price", "change": 0.02},
+      {"time": 110, "type": "news", "content": "TECHGROW reports quarterly earnings - meets expectations"},
+      {"time": 120, "type": "price", "change": 0.04},
+      {"time": 140, "type": "price", "change": 0.02},
+      {"time": 160, "type": "social", "content": "Not flashy, but my portfolio thanks me"},
+      {"time": 175, "type": "price", "change": 0.03}
+    ]
+  },
+  {
+    "name": "The Panic Sell",
+    "description": "You already own 200 shares of SAFECO at $50 each. Suddenly, concerning news breaks and the price starts dropping. Do you hold, sell, or buy more at the dip?",
+    "difficulty": 3,
+    "category": "loss_aversion",
+    "time_pressure_seconds": 150,
+    "unlock_requirements": {"min_simulations": 2, "min_process_score": 40},
+    "initial_data": {
+      "asset": "SAFECO",
+      "price": 50.00,
+      "your_balance": 5000,
+      "market_sentiment": "neutral",
+      "price_history": [52.00, 51.50, 51.00, 50.50, 50.00],
+      "holdings": {"SAFECO": 200},
+      "news_headlines": [
+        {"time": 0, "content": "Markets open with slight uncertainty", "type": "neutral"}
+      ],
+      "social_signals": [
+        {"time": 0, "content": "Keeping an eye on SAFECO today...", "sentiment": "neutral"}
+      ],
+      "market_params": {
+        "fixed_fee": 1.0,
+        "pct_fee": 0.002,
+        "base_spread_pct": 0.005,
+        "volume_per_tick": 1000,
+        "max_trade_per_tick": 500,
+        "volatility_clustering": true,
+        "vol_params": {"base_vol": 0.02, "persistence": 0.88, "shock_prob": 0.02, "shock_multiplier": 2.5},
+        "news_latency_enabled": true,
+        "time_pressure_fills": true,
+        "crowd_model_enabled": true,
+        "order_types_enabled": true,
+        "halts_enabled": true,
+        "halt_threshold_pct": 0.10,
+        "halt_duration": 10
+      }
+    },
+    "events": [
+      {"time": 10, "type": "news", "content": "BREAKING: SAFECO faces regulatory investigation", "latency": 2},
+      {"time": 15, "type": "price", "change": -0.08},
+      {"time": 25, "type": "social", "content": "Selling everything! Get out now! 😱"},
+      {"time": 35, "type": "price", "change": -0.12},
+      {"time": 45, "type": "social", "content": "This is the end for SAFECO!"},
+      {"time": 55, "type": "news", "content": "Analyst: 'Investigation appears to be routine, not serious'", "latency": 5},
+      {"time": 65, "type": "price", "change": -0.05},
+      {"time": 80, "type": "price", "change": 0.08},
+      {"time": 95, "type": "news", "content": "SAFECO releases statement: 'Cooperating fully, confident in outcome'"},
+      {"time": 110, "type": "price", "change": 0.12},
+      {"time": 125, "type": "social", "content": "Looks like that was a buying opportunity..."},
+      {"time": 140, "type": "price", "change": 0.06}
+    ]
+  },
+  {
+    "name": "The Insider Tip",
+    "description": "A friend mentions they heard SECRETCO might announce something big soon. The stock hasn't moved yet. Do you trust the tip, or wait for real news?",
+    "difficulty": 2,
+    "category": "social_proof",
+    "time_pressure_seconds": 180,
+    "unlock_requirements": null,
+    "initial_data": {
+      "asset": "SECRETCO",
+      "price": 25.00,
+      "your_balance": 10000,
+      "market_sentiment": "neutral",
+      "price_history": [24.80, 24.90, 25.00, 25.00, 25.00],
+      "news_headlines": [
+        {"time": 0, "content": "Markets trading sideways, no major news", "type": "neutral"}
+      ],
+      "social_signals": [
+        {"time": 0, "content": "Heard something big is coming for SECRETCO 👀", "sentiment": "bullish"}
+      ],
+      "market_params": {
+        "fixed_fee": 1.0,
+        "pct_fee": 0.001,
+        "base_spread_pct": 0.004,
+        "volume_per_tick": 2000,
+        "max_trade_per_tick": 1000,
+        "news_latency_enabled": true,
+        "time_pressure_fills": true,
+        "crowd_model_enabled": true,
+        "order_types_enabled": true,
+        "volatility_clustering": true,
+        "vol_params": {"base_vol": 0.015, "persistence": 0.8, "shock_prob": 0.01, "shock_multiplier": 2.0}
+      }
+    },
+    "events": [
+      {"time": 20, "type": "social", "content": "My cousin works there, says announcement coming!", "unverified": true},
+      {"time": 35, "type": "price", "change": 0.02},
+      {"time": 50, "type": "social", "content": "Loading up on SECRETCO before the news! 🤫"},
+      {"time": 65, "type": "price", "change": 0.05},
+      {"time": 80, "type": "news", "content": "Rumors circulating about potential SECRETCO announcement", "unverified": true, "latency": 4},
+      {"time": 95, "type": "price", "change": 0.08},
+      {"time": 110, "type": "social", "content": "This is it! Any minute now!"},
+      {"time": 130, "type": "news", "content": "SECRETCO: 'We have no announcements planned at this time'"},
+      {"time": 140, "type": "price", "change": -0.15},
+      {"time": 155, "type": "social", "content": "False alarm... classic pump and dump"},
+      {"time": 170, "type": "price", "change": -0.08}
+    ]
+  },
+  {
+    "name": "The All-In Moment",
+    "description": "MEGACORP stock is at an all-time high. Your analysis says it should keep going, but it's expensive. How much of your capital do you risk on one position?",
+    "difficulty": 4,
+    "category": "risk_management",
+    "time_pressure_seconds": 180,
+    "unlock_requirements": {"min_simulations": 3, "min_process_score": 50},
+    "initial_data": {
+      "asset": "MEGACORP",
+      "price": 500.00,
+      "your_balance": 50000,
+      "market_sentiment": "bullish",
+      "price_history": [420.00, 450.00, 470.00, 485.00, 495.00, 500.00],
+      "news_headlines": [
+        {"time": 0, "content": "MEGACORP hits new all-time high amid strong earnings", "type": "bullish"}
+      ],
+      "social_signals": [
+        {"time": 0, "content": "MEGACORP can't be stopped! TO THE MOON! 🌙", "sentiment": "bullish"},
+        {"time": 0, "content": "Put my entire savings in MEGACORP", "sentiment": "bullish"}
+      ],
+      "market_params": {
+        "fixed_fee": 2.0,
+        "pct_fee": 0.002,
+        "base_spread_pct": 0.005,
+        "volume_per_tick": 500,
+        "max_trade_per_tick": 300,
+        "volatility_clustering": true,
+        "vol_params": {"base_vol": 0.025, "persistence": 0.9, "shock_prob": 0.02, "shock_multiplier": 3.0},
+        "halts_enabled": true,
+        "halt_threshold_pct": 0.08,
+        "halt_duration": 15,
+        "news_latency_enabled": true,
+        "time_pressure_fills": true,
+        "crowd_model_enabled": true,
+        "order_types_enabled": true,
+        "margin_enabled": true,
+        "max_leverage": 2.0,
+        "max_drawdown_pct": 0.25,
+        "secondary_asset": "TECHIDX",
+        "secondary_correlation": 0.7
+      }
+    },
+    "events": [
+      {"time": 15, "type": "news", "content": "Analyst raises MEGACORP price target to $600", "latency": 3},
+      {"time": 25, "type": "price", "change": 0.03},
+      {"time": 40, "type": "social", "content": "This is the easiest money I've ever made!"},
+      {"time": 55, "type": "price", "change": 0.04},
+      {"time": 70, "type": "news", "content": "MEGACORP announces stock split - bullish signal"},
+      {"time": 85, "type": "price", "change": 0.05},
+      {"time": 100, "type": "social", "content": "Why would anyone NOT be all-in on this?"},
+      {"time": 115, "type": "news", "content": "BREAKING: CEO to testify before Congress next week", "latency": 5},
+      {"time": 125, "type": "price", "change": -0.08},
+      {"time": 140, "type": "social", "content": "Just a dip, buying more!", "unverified": true, "false_rumor": true},
+      {"time": 155, "type": "price", "change": -0.12},
+      {"time": 170, "type": "news", "content": "Concerns grow over regulatory scrutiny of MEGACORP"}
+    ]
+  },
+  {
+    "name": "The Contrarian Play",
+    "description": "Everyone is selling FAILCO after terrible earnings. The stock is down 40%. Is this a value opportunity or a falling knife?",
+    "difficulty": 4,
+    "category": "contrarian",
+    "time_pressure_seconds": 180,
+    "unlock_requirements": {"min_simulations": 3, "min_process_score": 50},
+    "initial_data": {
+      "asset": "FAILCO",
+      "price": 30.00,
+      "your_balance": 10000,
+      "market_sentiment": "bearish",
+      "price_history": [50.00, 45.00, 40.00, 35.00, 32.00, 30.00],
+      "news_headlines": [
+        {"time": 0, "content": "FAILCO misses earnings by 30%, stock plummets", "type": "bearish"}
+      ],
+      "social_signals": [
+        {"time": 0, "content": "RIP FAILCO 💀 Get out while you can!", "sentiment": "bearish"},
+        {"time": 0, "content": "Worst company ever. Complete disaster.", "sentiment": "bearish"}
+      ],
+      "market_params": {
+        "fixed_fee": 2.0,
+        "pct_fee": 0.002,
+        "base_spread_pct": 0.005,
+        "volume_per_tick": 500,
+        "max_trade_per_tick": 300,
+        "volatility_clustering": true,
+        "vol_params": {"base_vol": 0.025, "persistence": 0.9, "shock_prob": 0.02, "shock_multiplier": 3.0},
+        "halts_enabled": true,
+        "halt_threshold_pct": 0.08,
+        "halt_duration": 15,
+        "news_latency_enabled": true,
+        "time_pressure_fills": true,
+        "crowd_model_enabled": true,
+        "order_types_enabled": true,
+        "margin_enabled": true,
+        "max_leverage": 2.0,
+        "max_drawdown_pct": 0.25
+      }
+    },
+    "events": [
+      {"time": 15, "type": "price", "change": -0.08},
+      {"time": 30, "type": "social", "content": "Down 50% from highs. This company is done."},
+      {"time": 45, "type": "news", "content": "Multiple analysts downgrade FAILCO to 'sell'", "latency": 3},
+      {"time": 55, "type": "price", "change": -0.10},
+      {"time": 70, "type": "social", "content": "Anyone buying this is throwing money away"},
+      {"time": 85, "type": "price", "change": -0.05},
+      {"time": 100, "type": "news", "content": "FAILCO CEO: 'We have a turnaround plan ready'", "latency": 4, "unverified": true},
+      {"time": 115, "type": "price", "change": 0.15},
+      {"time": 130, "type": "social", "content": "Wait... is FAILCO actually recovering?"},
+      {"time": 145, "type": "price", "change": 0.20},
+      {"time": 160, "type": "news", "content": "Hedge fund discloses large stake in FAILCO"},
+      {"time": 175, "type": "price", "change": 0.12}
+    ]
+  },
+  {
+    "name": "The Perfect Storm",
+    "description": "STORMX is a volatile biotech stock caught between a breakthrough drug trial and regulatory scrutiny. You hold 100 shares and $50,000 in cash. Every market force is in play — halts, margin pressure, crowd panic, delayed news, and wild volatility. Can you navigate the chaos?",
+    "difficulty": 5,
+    "category": "risk_management",
+    "time_pressure_seconds": 240,
+    "unlock_requirements": null,
+    "initial_data": {
+      "asset": "STORMX",
+      "price": 100.00,
+      "your_balance": 50000,
+      "market_sentiment": "neutral",
+      "price_history": [92.00, 95.00, 97.00, 98.50, 99.50, 100.00],
+      "holdings": {"STORMX": 100},
+      "news_headlines": [
+        {"time": 0, "content": "STORMX awaits FDA decision on flagship drug candidate", "type": "neutral"}
+      ],
+      "social_signals": [
+        {"time": 0, "content": "Big week for STORMX holders. Buckle up.", "sentiment": "neutral"},
+        {"time": 0, "content": "My entire portfolio is riding on this FDA call 🎲", "sentiment": "bullish"}
+      ],
+      "market_params": {
+        "fixed_fee": 3.0,
+        "pct_fee": 0.0025,
+        "base_spread_pct": 0.008,
+        "volume_per_tick": 400,
+        "max_trade_per_tick": 200,
+        "volatility_clustering": true,
+        "vol_params": {"base_vol": 0.03, "persistence": 0.92, "shock_prob": 0.03, "shock_multiplier": 4.0},
+        "halts_enabled": true,
+        "halt_threshold_pct": 0.07,
+        "halt_duration": 20,
+        "news_latency_enabled": true,
+        "time_pressure_fills": true,
+        "crowd_model_enabled": true,
+        "order_types_enabled": true,
+        "margin_enabled": true,
+        "max_leverage": 2.5,
+        "max_drawdown_pct": 0.20,
+        "secondary_asset": "MKTIDX",
+        "secondary_correlation": 0.8
+      }
+    },
+    "events": [
+      {"time": 10, "type": "news", "content": "Analyst upgrades STORMX to 'strong buy' ahead of FDA decision", "latency": 4},
+      {"time": 20, "type": "price", "change": 0.05},
+      {"time": 25, "type": "social", "content": "Loading up on STORMX before the announcement! 🚀🚀", "unverified": true},
+      {"time": 35, "type": "price", "change": 0.12},
+      {"time": 45, "type": "social", "content": "STORMX about to moon! My buddy at the FDA says it's a lock! 🤫", "unverified": true},
+      {"time": 50, "type": "news", "content": "UNCONFIRMED: Sources say FDA panel voted favorably on STORMX drug", "unverified": true, "latency": 6},
+      {"time": 60, "type": "price", "change": 0.10},
+      {"time": 70, "type": "price", "change": 0.08},
+      {"time": 80, "type": "social", "content": "HALT INCOMING! Price moving too fast!"},
+      {"time": 85, "type": "price", "change": -0.08},
+      {"time": 95, "type": "news", "content": "CORRECTION: Earlier FDA report was UNVERIFIED. Official decision still pending"},
+      {"time": 100, "type": "price", "change": -0.06},
+      {"time": 110, "type": "social", "content": "It was all fake news! Sell everything! 😱😱"},
+      {"time": 120, "type": "social", "content": "Margin call warning hitting traders. Blood in the water."},
+      {"time": 130, "type": "price", "change": -0.15},
+      {"time": 145, "type": "news", "content": "STORMX CEO: 'We remain confident in our drug pipeline'", "latency": 5},
+      {"time": 155, "type": "price", "change": 0.08},
+      {"time": 165, "type": "social", "content": "Contrarians buying the dip. Smart money moving in?"},
+      {"time": 175, "type": "news", "content": "BREAKING: FDA grants conditional approval for STORMX lead drug", "latency": 8},
+      {"time": 190, "type": "price", "change": 0.06},
+      {"time": 200, "type": "price", "change": -0.04},
+      {"time": 210, "type": "price", "change": 0.05},
+      {"time": 220, "type": "social", "content": "What a ride. STORMX holders need therapy after today."},
+      {"time": 230, "type": "price", "change": 0.03}
+    ]
+  }
+]

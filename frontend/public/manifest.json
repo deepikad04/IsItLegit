@@ -1,0 +1,17 @@
+{
+  "name": "IsItLegit - Decision Training Platform",
+  "short_name": "IsItLegit",
+  "description": "Train your financial decision-making with AI-powered simulations",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#111827",
+  "theme_color": "#6366f1",
+  "icons": [
+    {
+      "src": "/brain.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

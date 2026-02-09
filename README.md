@@ -13,6 +13,43 @@ Built with React, FastAPI, PostgreSQL, and Google Gemini.
 
 ---
 
+## Testing Instructions (for Judges)
+
+**Live App:** https://isitlegit-frontend.onrender.com
+
+> Note: The backend is hosted on Render's free tier, so the first request may take ~30s to cold-start. After that, everything is fast.
+
+### Pre-seeded Demo Accounts
+
+Two accounts are pre-loaded with full simulation history, AI analysis, and behavior profiles so you can explore the complete experience without running any simulations yourself:
+
+| Account | Email | Password | What to See |
+|---------|-------|----------|-------------|
+| **demo_trader** | `demo@isitlegit.com` | `demo1234` | 20 completed simulations, full progress chart, behavior profile with bias patterns, community stats, all reflection tabs |
+| **alex_novice** | `alex@isitlegit.com` | `alex1234` | 12 simulations, beginner-level profile, improvement trajectory |
+
+### Suggested Walkthrough (5 min)
+
+1. **Log in** with `demo@isitlegit.com` / `demo1234`
+2. **Dashboard** — see progress chart, community insights (aggregate stats, score distribution), recommended scenario, and AI Challenge card
+3. **Click any completed simulation** under "Recent Simulations" to view the **Reflection page**
+   - Try each tab: Bias Analysis, Counterfactuals ("what if?"), Why Decisions, Pro Comparison, Coaching
+   - These are all powered by Gemini with structured JSON output
+4. **View Full Profile** — see bias patterns, strengths/weaknesses, improvement trajectory
+5. **Start a new simulation** — pick any scenario (try "The Perfect Storm" for all 14 market features)
+   - Read the **briefing screen** showing active market features
+   - Click "Begin Simulation" and trade for 30-60 seconds
+   - Notice: real-time price chart, news with source attribution, social feed with avatars, live bias detector alerts
+   - Try the "Challenge My Reasoning" button after writing a rationale
+6. **End the simulation** and view your AI-generated reflection
+7. **Learning tab** — browse bite-sized bias education cards
+
+### Or Register a Fresh Account
+
+Register with any email to see the **new user experience** — empty dashboard, score starts at 0, guided first simulation flow.
+
+---
+
 ## What is IsItLegit?
 
 Ever wondered if you'd fall for a pump-and-dump scheme? Or panic-sell during a flash crash? IsItLegit puts you in realistic market scenarios and tracks *how* you make decisions — not just the outcome.

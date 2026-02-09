@@ -207,6 +207,10 @@ export default function Simulation() {
   const [decisionHistory, setDecisionHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
 
+  // Live bias indicator
+  const [biasAlert, setBiasAlert] = useState(null);
+  const lastBiasCheck = useRef(0);
+
   const decisionStartTime = useRef(Date.now());
   const panelSwitchTime = useRef(Date.now());
   const sseReaderRef = useRef(null);
@@ -335,6 +339,70 @@ export default function Simulation() {
       }));
     };
   }, [activePanel]);
+
+  /* ─── Live Bias Detection ────────────────────────────────────── */
+
+  useEffect(() => {
+    if (phase !== 'running' || !simulation || !state) return;
+
+    // Check every 5 seconds
+    if (timeElapsed - lastBiasCheck.current < 5) return;
+    lastBiasCheck.current = timeElapsed;
+
+    const secsSinceLastDecision = (Date.now() - decisionStartTime.current) / 1000;
+    const socialTime = infoViewTimes.social || 0;
+    const newsTime = infoViewTimes.news || 0;
+    const totalInfoTime = socialTime + newsTime;
+    const recentBuys = decisionHistory.filter(d => d.type === 'buy').slice(-3);
+    const recentDecisions = decisionHistory.slice(-5);
+    const priceNow = state.current_price;
+    const entryP = state.price_history?.[0] || priceNow;
+    const priceDrop = ((entryP - priceNow) / entryP) * 100;
+    const priceRise = ((priceNow - entryP) / entryP) * 100;
+
+    let alert = null;
+
+    // 1. Inaction — haven't decided in 45s
+    if (secsSinceLastDecision > 45 && decisionHistory.length > 0) {
+      alert = { icon: '🕐', text: "You haven't acted in 45s — analysis paralysis?", color: 'bg-amber-500' };
+    }
+    // 2. Social media fixation
+    else if (socialTime > 20 && totalInfoTime > 0 && socialTime / totalInfoTime > 0.7) {
+      alert = { icon: '📱', text: "You're spending a lot of time on social media", color: 'bg-blue-500' };
+    }
+    // 3. FOMO buying — rapid buys after price rise
+    else if (recentBuys.length >= 2 && priceRise > 8) {
+      const lastTwoBuys = recentBuys.slice(-2);
+      if (lastTwoBuys.length === 2 && lastTwoBuys[1].time - lastTwoBuys[0].time < 20) {
+        alert = { icon: '🔥', text: "Rapid buying during a rally — possible FOMO", color: 'bg-orange-500' };
+      }
+    }
+    // 4. Loss aversion — holding too long during drop
+    else if (priceDrop > 10 && decisionHistory.length > 0 && !decisionHistory.some(d => d.type === 'sell')) {
+      alert = { icon: '📉', text: "Price down " + priceDrop.toFixed(0) + "% with no sells — loss aversion?", color: 'bg-red-500' };
+    }
+    // 5. Overtrading
+    else if (decisionHistory.filter(d => d.type === 'buy' || d.type === 'sell').length >= 6 && timeElapsed < 60) {
+      alert = { icon: '⚡', text: "6+ trades in under a minute — slow down?", color: 'bg-purple-500' };
+    }
+    // 6. Anchoring to entry price
+    else if (recentDecisions.length >= 3 && Math.abs(priceRise) > 5) {
+      const allHolds = recentDecisions.every(d => d.type === 'hold');
+      if (allHolds) {
+        alert = { icon: '⚓', text: "Multiple holds despite price movement — anchoring to entry?", color: 'bg-indigo-500' };
+      }
+    }
+    // 7. No rationale provided
+    else if (decisionHistory.length >= 3 && decisionHistory.slice(-3).every(d => !d.rationale)) {
+      alert = { icon: '💭', text: "Try writing your reasoning — it improves decision quality", color: 'bg-teal-500' };
+    }
+
+    if (alert) {
+      setBiasAlert(alert);
+      // Auto-dismiss after 8 seconds
+      setTimeout(() => setBiasAlert(prev => prev === alert ? null : prev), 8000);
+    }
+  }, [timeElapsed, phase, simulation, state]);
 
   /* ─── Keyboard Shortcuts ─────────────────────────────────────── */
 
@@ -727,6 +795,25 @@ export default function Simulation() {
     <div className="min-h-screen bg-brand-cream p-4 lg:p-6">
       {/* Coach Nudge */}
       <CoachNudge nudge={coachNudge} onDismiss={() => setCoachNudge(null)} />
+
+      {/* Live Bias Alert */}
+      {biasAlert && (
+        <div className="fixed bottom-4 left-4 z-50 animate-slide-in-right max-w-sm">
+          <div className={clsx(
+            'flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl text-white',
+            biasAlert.color
+          )}>
+            <span className="text-xl flex-shrink-0">{biasAlert.icon}</span>
+            <div className="flex-1">
+              <p className="text-xs font-black uppercase tracking-wider mb-0.5 opacity-80">Bias Detector</p>
+              <p className="text-sm font-bold leading-snug">{biasAlert.text}</p>
+            </div>
+            <button onClick={() => setBiasAlert(null)} className="text-white/60 hover:text-white flex-shrink-0">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Toast Notifications */}
       <div className="fixed top-4 right-4 z-50 space-y-2 pointer-events-none">

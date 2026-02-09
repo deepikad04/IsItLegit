@@ -24,6 +24,8 @@ import {
   Brain,
   Flame,
   Compass,
+  Users,
+  Hash,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -38,6 +40,7 @@ export default function Dashboard() {
   const [filterCategory, setFilterCategory] = useState('all');
   const [filterDifficulty, setFilterDifficulty] = useState('all');
   const [progressData, setProgressData] = useState([]);
+  const [communityStats, setCommunityStats] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -53,6 +56,11 @@ export default function Dashboard() {
       setScenarios(scenariosRes.data);
       setRecentSimulations(simulationsRes.data);
       setProfileSummary(profileRes.data);
+
+      // Load community stats (non-blocking)
+      profileApi.getCommunityStats().then(res => {
+        setCommunityStats(res.data);
+      }).catch(() => {});
 
       // Load full profile for progress chart (non-blocking)
       profileApi.get().then(res => {
@@ -299,6 +307,79 @@ export default function Dashboard() {
           </div>
         );
       })()}
+
+      {/* Community Stats */}
+      {communityStats && communityStats.total_simulations > 0 && (
+        <div className="card animate-fade-in-up" style={{ animationDelay: '0.15s' }}>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-brand-navy flex items-center gap-2">
+              <Users className="h-5 w-5" /> Community Insights
+            </h2>
+            {communityStats.your_percentile != null && (
+              <span className="text-sm font-bold text-brand-navy bg-brand-lavender px-3 py-1 rounded-full">
+                Top {100 - communityStats.your_percentile}%
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-gray-50 rounded-xl p-4 text-center">
+              <p className="text-2xl font-black text-brand-navy">{communityStats.total_traders}</p>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mt-1">Traders</p>
+            </div>
+            <div className="bg-gray-50 rounded-xl p-4 text-center">
+              <p className="text-2xl font-black text-brand-navy">{communityStats.total_simulations}</p>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mt-1">Simulations</p>
+            </div>
+            <div className="bg-gray-50 rounded-xl p-4 text-center">
+              <p className="text-2xl font-black text-brand-navy">{communityStats.avg_process_score}%</p>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mt-1">Avg Score</p>
+            </div>
+            <div className="bg-gray-50 rounded-xl p-4 text-center">
+              <p className="text-2xl font-black text-brand-navy">{communityStats.total_decisions}</p>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mt-1">Decisions</p>
+            </div>
+          </div>
+          {(communityStats.most_common_bias || communityStats.most_popular_scenario) && (
+            <div className="flex flex-wrap gap-3 mt-4">
+              {communityStats.most_common_bias && (
+                <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
+                  <AlertTriangle className="h-4 w-4 text-amber-600" />
+                  <span className="text-sm font-bold text-amber-800">
+                    Most common bias: {communityStats.most_common_bias} ({communityStats.most_common_bias_pct}%)
+                  </span>
+                </div>
+              )}
+              {communityStats.most_popular_scenario && (
+                <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5">
+                  <Target className="h-4 w-4 text-blue-600" />
+                  <span className="text-sm font-bold text-blue-800">
+                    Most played: {communityStats.most_popular_scenario}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+          {communityStats.score_distribution && (
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Score Distribution</p>
+              <div className="flex items-end gap-2 h-16">
+                {Object.entries(communityStats.score_distribution).map(([level, count]) => {
+                  const total = Object.values(communityStats.score_distribution).reduce((a, b) => a + b, 0);
+                  const pct = total > 0 ? (count / total) * 100 : 0;
+                  const colors = { beginner: 'bg-red-400', developing: 'bg-amber-400', proficient: 'bg-blue-400', expert: 'bg-emerald-400' };
+                  return (
+                    <div key={level} className="flex-1 flex flex-col items-center gap-1">
+                      <div className={clsx('w-full rounded-t-lg transition-all', colors[level])}
+                        style={{ height: `${Math.max(pct, 4)}%` }} />
+                      <span className="text-xs font-bold text-gray-500 capitalize">{level}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Recommended Scenario */}
       {profileSummary?.top_weakness && filteredScenarios.length > 0 && (() => {

@@ -105,6 +105,7 @@ export const profileApi = {
   getPlaybook: () => api.get('/profile/playbook'),
   trackPlaybook: (simulationId) =>
     api.post('/profile/playbook/track', null, { params: { simulation_id: simulationId } }),
+  getCommunityStats: () => api.get('/profile/community-stats'),
 };
 
 export default api;

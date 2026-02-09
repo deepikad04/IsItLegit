@@ -204,6 +204,92 @@ async def track_playbook_adherence(
     return await gemini.check_playbook_adherence(playbook, decisions, simulation)
 
 
+@router.get("/community-stats", summary="Aggregate platform statistics")
+async def get_community_stats(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db)
+):
+    """Get aggregate stats across all users for community insights."""
+    total_users = db.query(func.count(User.id)).scalar() or 0
+    total_sims = db.query(func.count(Simulation.id)).filter(
+        Simulation.status == "completed"
+    ).scalar() or 0
+    total_decisions = db.query(func.count(Decision.id)).scalar() or 0
+
+    avg_score = db.query(func.avg(Simulation.process_quality_score)).filter(
+        Simulation.status == "completed",
+        Simulation.process_quality_score.isnot(None)
+    ).scalar() or 0
+
+    # Most common bias across all profiles
+    profiles = db.query(BehaviorProfile).all()
+    bias_counts = {}
+    for p in profiles:
+        for bias_name, score in (p.profile_data or {}).get("bias_patterns", {}).items():
+            if score > 0.4:
+                bias_counts[bias_name] = bias_counts.get(bias_name, 0) + 1
+
+    top_bias = None
+    top_bias_pct = 0
+    if bias_counts and total_users > 0:
+        top_bias = max(bias_counts, key=bias_counts.get)
+        top_bias_pct = round(bias_counts[top_bias] / max(total_users, 1) * 100)
+
+    # Most popular scenario
+    popular = db.query(
+        Simulation.scenario_id,
+        func.count(Simulation.id).label("cnt")
+    ).filter(
+        Simulation.status == "completed"
+    ).group_by(Simulation.scenario_id).order_by(func.count(Simulation.id).desc()).first()
+
+    popular_scenario = None
+    if popular:
+        from models.scenario import Scenario
+        sc = db.query(Scenario).filter(Scenario.id == popular[0]).first()
+        if sc:
+            popular_scenario = sc.name
+
+    # Score distribution
+    scores = db.query(Simulation.process_quality_score).filter(
+        Simulation.status == "completed",
+        Simulation.process_quality_score.isnot(None)
+    ).all()
+    distribution = {"beginner": 0, "developing": 0, "proficient": 0, "expert": 0}
+    for (s,) in scores:
+        if s < 30:
+            distribution["beginner"] += 1
+        elif s < 55:
+            distribution["developing"] += 1
+        elif s < 80:
+            distribution["proficient"] += 1
+        else:
+            distribution["expert"] += 1
+
+    # Current user's percentile
+    user_avg = db.query(func.avg(Simulation.process_quality_score)).filter(
+        Simulation.user_id == current_user.id,
+        Simulation.status == "completed",
+        Simulation.process_quality_score.isnot(None)
+    ).scalar()
+    user_percentile = None
+    if user_avg is not None and scores:
+        below = sum(1 for (s,) in scores if s < user_avg)
+        user_percentile = round(below / len(scores) * 100)
+
+    return {
+        "total_traders": total_users,
+        "total_simulations": total_sims,
+        "total_decisions": total_decisions,
+        "avg_process_score": round(avg_score, 1),
+        "most_common_bias": top_bias.replace("_", " ").title() if top_bias else None,
+        "most_common_bias_pct": top_bias_pct,
+        "most_popular_scenario": popular_scenario,
+        "score_distribution": distribution,
+        "your_percentile": user_percentile,
+    }
+
+
 def get_bias_description(bias_name: str) -> str:
     """Get description for a bias pattern."""
     descriptions = {

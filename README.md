@@ -15,7 +15,7 @@ Built with React, FastAPI, PostgreSQL, and Google Gemini.
 
 ## Why This Matters
 
-Financial literacy programs teach *what* to do but not *how you actually behave* under pressure. Research shows that **cognitive biases cause 80% of retail investor losses** — yet no existing tool measures or trains against them.
+Financial literacy programs teach *what* to do but not *how you actually behave* under pressure. Research shows that **cognitive biases cause 80% of retail investor losses** (Barber & Odean, 2000; Kahneman & Tversky, 1979) — individual investors underperform by 1.5% annually due to overtrading driven by overconfidence alone. Yet no existing tool measures or trains against these biases using actual behavioral data.
 
 IsItLegit is the first platform that:
 - **Instruments the decision process itself** — not just outcomes

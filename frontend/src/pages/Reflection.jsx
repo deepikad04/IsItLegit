@@ -56,6 +56,8 @@ export default function Reflection() {
   const [whyData, setWhyData] = useState(null);
   const [proData, setProData] = useState(null);
   const [coaching, setCoaching] = useState(null);
+  const [aiMetadata, setAiMetadata] = useState(null);
+  const [showThinking, setShowThinking] = useState(false);
   const [biasHeatmap, setBiasHeatmap] = useState(null);
   const [rationaleReview, setRationaleReview] = useState(null);
   const [calibration, setCalibration] = useState(null);
@@ -155,7 +157,7 @@ export default function Reflection() {
 
     // Phase 2: Load secondary data in the background (non-blocking)
     try {
-      const [cfRes, whyRes, proRes, coachRes, heatmapRes, rationaleRes, calRes, outcomeRes, biasClsRes, confCalRes] = await Promise.all([
+      const [cfRes, whyRes, proRes, coachRes, heatmapRes, rationaleRes, calRes, outcomeRes, biasClsRes, confCalRes, metaRes] = await Promise.all([
         counterfactuals.length > 0 ? Promise.resolve({ data: counterfactuals }) : reflectionApi.getCounterfactuals(simulationId).catch(() => ({ data: [] })),
         reflectionApi.getWhyDecisions(simulationId).catch(() => ({ data: null })),
         reflectionApi.getProComparison(simulationId).catch(() => ({ data: null })),
@@ -166,6 +168,7 @@ export default function Reflection() {
         reflectionApi.getOutcomeDistribution(simulationId).catch(() => ({ data: null })),
         reflectionApi.getBiasClassifier(simulationId).catch(() => ({ data: null })),
         reflectionApi.getConfidenceCalibration(simulationId).catch(() => ({ data: null })),
+        reflectionApi.getAiMetadata(simulationId).catch(() => ({ data: null })),
       ]);
 
       if (cfRes.data?.length) setCounterfactuals(cfRes.data);
@@ -178,6 +181,7 @@ export default function Reflection() {
       setOutcomeDistribution(outcomeRes.data);
       setBiasClassifier(biasClsRes.data);
       setConfidenceCalibration(confCalRes.data);
+      setAiMetadata(metaRes.data);
     } catch (err) {
       console.error('Failed to load secondary data:', err);
       setSecondaryError(true);
@@ -279,6 +283,30 @@ export default function Reflection() {
           )}>
             Process: {processScore >= 70 ? 'Strong' : processScore >= 50 ? 'Average' : 'Risky'} ({Math.round(processScore)}/100)
           </div>
+
+          {/* AI Source Badge */}
+          {aiMetadata && (
+            <div className={clsx(
+              'px-3 py-1.5 rounded-full text-xs font-bold inline-flex items-center gap-1.5',
+              aiMetadata.source === 'gemini'
+                ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                : 'bg-gray-100 text-gray-600 border border-gray-200'
+            )}>
+              {aiMetadata.source === 'gemini' ? (
+                <>
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
+                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  Gemini 3 Pro
+                </>
+              ) : (
+                <>
+                  <Zap className="w-3 h-3" />
+                  Heuristic Analysis
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -305,6 +333,50 @@ export default function Reflection() {
           </div>
         </div>
       </div>
+
+      {/* AI Reasoning Panel — shows Gemini's thinking process */}
+      {aiMetadata?.thinking && Object.keys(aiMetadata.thinking).length > 0 && (
+        <div className="card p-0 overflow-hidden">
+          <button
+            onClick={() => setShowThinking(!showThinking)}
+            className="w-full flex items-center justify-between p-4 hover:bg-brand-lavender/20 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
+                <Brain className="h-4 w-4 text-blue-600" />
+              </div>
+              <div className="text-left">
+                <span className="text-sm font-semibold text-brand-navy">AI Reasoning</span>
+                <span className="text-xs text-brand-navy/50 ml-2">Gemini's internal thought process</span>
+              </div>
+            </div>
+            <ChevronRight className={clsx(
+              'h-5 w-5 text-brand-navy/40 transition-transform',
+              showThinking && 'rotate-90'
+            )} />
+          </button>
+
+          {showThinking && (
+            <div className="border-t border-brand-navy/10 p-4 space-y-4 animate-fadeIn">
+              {Object.entries(aiMetadata.thinking).map(([key, text]) => (
+                <div key={key}>
+                  <p className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-1.5">
+                    {key.replace(/_/g, ' ')}
+                  </p>
+                  <div className="bg-gradient-to-r from-blue-50/80 to-transparent rounded-lg p-3 border-l-2 border-blue-300">
+                    <p className="text-sm text-brand-navy/70 whitespace-pre-wrap leading-relaxed font-mono">
+                      {text.length > 800 ? text.slice(0, 800) + '...' : text}
+                    </p>
+                  </div>
+                </div>
+              ))}
+              <p className="text-[10px] text-brand-navy/30 italic">
+                Extended thinking enabled via Gemini 3 Pro — the model reasons through your decision trace before producing structured analysis.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* At a Glance Summary (shown when full analysis is collapsed) */}
       {!showFullAnalysis && (

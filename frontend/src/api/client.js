@@ -89,6 +89,7 @@ export const reflectionApi = {
   getOutcomeDistribution: (simulationId) => api.get(`/reflection/${simulationId}/outcome-distribution`),
   getBiasClassifier: (simulationId) => api.get(`/reflection/${simulationId}/bias-classifier`),
   getConfidenceCalibration: (simulationId) => api.get(`/reflection/${simulationId}/confidence-calibration`),
+  getAiMetadata: (simulationId) => api.get(`/reflection/${simulationId}/ai-metadata`),
 };
 
 export const learningApi = {

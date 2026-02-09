@@ -79,10 +79,20 @@ class GeminiService:
         self._quota_exhausted_until: float = 0.0  # unix timestamp
         self._quota_cooldown_seconds: int = 300  # 5 min cooldown
 
+        # Stores the last thinking text from a Gemini call (per instance)
+        self._last_thinking: str | None = None
+
         if not self.use_mock and settings.gemini_api_key:
             self.client = genai.Client(api_key=settings.gemini_api_key)
         else:
             self.client = None
+
+    @property
+    def current_source(self) -> str:
+        """Return 'gemini' or 'heuristic' based on current state."""
+        if self.use_mock or not self.client or self._is_quota_exhausted:
+            return "heuristic"
+        return "gemini"
 
     @property
     def _is_quota_exhausted(self) -> bool:
@@ -175,6 +185,22 @@ class GeminiService:
                 # Validate against Pydantic schema
                 validated = response_schema.model_validate(data)
                 result = validated.model_dump()
+
+                # Mark source as Gemini (heuristic fallbacks mark "heuristic")
+                result["_source"] = "gemini"
+
+                # Extract thinking text from response parts
+                thinking_parts = []
+                if hasattr(response, 'candidates') and response.candidates:
+                    for part in (response.candidates[0].content.parts or []):
+                        if hasattr(part, 'thought') and part.thought:
+                            thinking_parts.append(part.text)
+                if thinking_parts:
+                    thinking_text = "\n\n".join(thinking_parts)
+                    result["_thinking"] = thinking_text
+                    self._last_thinking = thinking_text
+                else:
+                    self._last_thinking = None
 
                 # Extract grounding metadata if search grounding was used
                 if use_search_grounding:

@@ -13,6 +13,7 @@ const Simulation = lazy(() => import('./pages/Simulation'));
 const Reflection = lazy(() => import('./pages/Reflection'));
 const Learning = lazy(() => import('./pages/Learning'));
 const Profile = lazy(() => import('./pages/Profile'));
+const Scenarios = lazy(() => import('./pages/Scenarios'));
 
 function LazyFallback() {
   return (
@@ -53,6 +54,14 @@ function AppRoutes() {
         <ProtectedRoute>
           <Layout>
             <Dashboard />
+          </Layout>
+        </ProtectedRoute>
+      } />
+
+      <Route path="/scenarios" element={
+        <ProtectedRoute>
+          <Layout>
+            <Scenarios />
           </Layout>
         </ProtectedRoute>
       } />

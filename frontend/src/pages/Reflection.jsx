@@ -4,6 +4,12 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { reflectionApi } from '../api/client';
 import BiasHeatmap from '../components/BiasHeatmap';
 import ProReplayChart from '../components/ProReplayChart';
+import SectionErrorBoundary from '../components/SectionErrorBoundary';
+import {
+  ProcessGauge, LuckSkillBar, PatternCard, CounterfactualCard,
+  InsightCard, RationaleCritiqueCard, IsolatedCounterfactualCard,
+  CalibrationCard, OutcomeDistributionChart,
+} from '../components/reflection';
 import {
   TrendingUp, TrendingDown, Target, Brain, GitBranch,
   Lightbulb, AlertTriangle, CheckCircle, ChevronRight,
@@ -41,387 +47,6 @@ const PERSONA_STYLES = {
   },
 };
 
-function ProcessGauge({ score }) {
-  const getColor = () => {
-    if (score >= 70) return 'text-green-600';
-    if (score >= 50) return 'text-amber-500';
-    return 'text-red-500';
-  };
-
-  const getStrokeColor = () => {
-    if (score >= 70) return '#16a34a';
-    if (score >= 50) return '#f59e0b';
-    return '#ef4444';
-  };
-
-  const getLabel = () => {
-    if (score >= 70) return 'Strong';
-    if (score >= 50) return 'Average';
-    return 'Needs Work';
-  };
-
-  const circumference = 2 * Math.PI * 56;
-  const dashOffset = circumference - (score / 100) * circumference;
-
-  return (
-    <div className="text-center">
-      <div className="relative w-36 h-36 mx-auto">
-        <svg className="w-36 h-36 transform -rotate-90" viewBox="0 0 128 128">
-          <circle
-            cx="64" cy="64" r="56"
-            stroke="#e5e7eb"
-            strokeWidth="10"
-            fill="none"
-          />
-          <circle
-            cx="64" cy="64" r="56"
-            stroke={getStrokeColor()}
-            strokeWidth="10"
-            fill="none"
-            strokeLinecap="round"
-            strokeDasharray={circumference}
-            strokeDashoffset={dashOffset}
-            style={{
-              transition: 'stroke-dashoffset 1.2s ease-out',
-            }}
-          />
-        </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className={clsx('text-4xl font-black', getColor())}>{Math.round(score)}</span>
-          <span className="text-brand-navy/50 text-xs font-semibold uppercase tracking-wider mt-0.5">{getLabel()}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LuckSkillBar({ luck, skill }) {
-  const luckPct = Math.round(luck * 100);
-  const skillPct = Math.round(skill * 100);
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="w-3 h-3 rounded-full bg-amber-500" />
-          <span className="text-sm font-semibold text-brand-navy">Luck</span>
-          <span className="text-lg font-black text-amber-600">{luckPct}%</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-lg font-black text-cyan-600">{skillPct}%</span>
-          <span className="text-sm font-semibold text-brand-navy">Skill</span>
-          <span className="w-3 h-3 rounded-full bg-cyan-500" />
-        </div>
-      </div>
-      <div className="h-5 bg-gray-100 rounded-full overflow-hidden flex shadow-inner">
-        <div
-          className="bg-gradient-to-r from-amber-400 to-amber-500 transition-all duration-700 ease-out rounded-l-full"
-          style={{ width: `${luckPct}%` }}
-        />
-        <div
-          className="bg-gradient-to-r from-cyan-400 to-cyan-500 transition-all duration-700 ease-out rounded-r-full"
-          style={{ width: `${skillPct}%` }}
-        />
-      </div>
-      <p className="text-xs text-center text-brand-navy/50">
-        {skillPct > luckPct
-          ? 'Your decisions drove the outcome more than market conditions'
-          : skillPct === luckPct
-            ? 'Equal parts luck and skill in this simulation'
-            : 'Market conditions played a bigger role than your decisions'}
-      </p>
-    </div>
-  );
-}
-
-function PatternCard({ pattern }) {
-  const confidencePct = Math.round(pattern.confidence * 100);
-
-  return (
-    <div className={clsx(
-      'p-4 rounded-xl border-l-4 bg-white shadow-sm',
-      pattern.confidence >= 0.7 ? 'border-red-500' :
-        pattern.confidence >= 0.5 ? 'border-amber-500' :
-          'border-brand-blue'
-    )}>
-      <div className="flex items-center justify-between mb-2">
-        <h4 className="font-bold text-brand-navy capitalize text-base">
-          {pattern.pattern_name.replace(/_/g, ' ')}
-        </h4>
-        <div className="flex items-center gap-2">
-          <div className="w-16 h-2 bg-gray-100 rounded-full overflow-hidden">
-            <div
-              className={clsx(
-                'h-full rounded-full',
-                pattern.confidence >= 0.7 ? 'bg-red-500' :
-                  pattern.confidence >= 0.5 ? 'bg-amber-500' : 'bg-brand-blue'
-              )}
-              style={{ width: `${confidencePct}%` }}
-            />
-          </div>
-          <span className={clsx(
-            'text-xs font-bold px-2 py-0.5 rounded-full',
-            pattern.confidence >= 0.7 ? 'bg-red-100 text-red-700' :
-              pattern.confidence >= 0.5 ? 'bg-yellow-100 text-amber-700' :
-                'bg-brand-blue/20 text-brand-navy/70'
-          )}>
-            {confidencePct}%
-          </span>
-        </div>
-      </div>
-      <p className="text-brand-navy/60 text-sm mb-3">{pattern.description}</p>
-      <div className="space-y-1.5">
-        {pattern.evidence.map((e, i) => (
-          <div key={i} className="flex items-start space-x-2 text-sm text-brand-navy/70">
-            <CheckCircle className="h-3.5 w-3.5 text-brand-navy/40 flex-shrink-0 mt-0.5" />
-            <span>{e}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function CounterfactualCard({ cf, index }) {
-  const profit = cf.outcome?.profit_loss || 0;
-  const isProfit = profit > 0;
-
-  return (
-    <div className="p-4 bg-brand-lavender/30 rounded-lg">
-      <div className="flex items-center space-x-2 mb-2">
-        <GitBranch className="h-5 w-5 text-brand-navy" />
-        <h4 className="font-medium text-brand-navy">Timeline {index + 1}: {cf.timeline_name}</h4>
-      </div>
-      <p className="text-brand-navy/60 text-sm mb-3">{cf.description}</p>
-      <div className="flex items-center justify-between p-3 bg-brand-cream rounded-lg mb-3">
-        <span className="text-brand-navy/60">Alternate Outcome:</span>
-        <span className={clsx(
-          'text-lg font-bold',
-          isProfit ? 'text-green-700' : 'text-red-600'
-        )}>
-          {isProfit ? '+' : ''}{profit.toFixed(2)}
-        </span>
-      </div>
-      <p className="text-sm text-brand-navy/70 italic">"{cf.lesson}"</p>
-    </div>
-  );
-}
-
-function InsightCard({ insight }) {
-  return (
-    <div className="p-4 bg-gradient-to-r from-brand-lavender/50 to-brand-cream rounded-lg border border-brand-navy/30">
-      <div className="flex items-start space-x-3">
-        <Lightbulb className="h-5 w-5 text-brand-navy flex-shrink-0 mt-0.5" />
-        <div>
-          <h4 className="font-medium text-brand-navy mb-1">{insight.title}</h4>
-          <p className="text-brand-navy/70 text-sm">{insight.description}</p>
-          {insight.recommended_card_id && (
-            <Link
-              to="/learning"
-              className="inline-flex items-center space-x-1 text-brand-navy hover:text-brand-navy-light text-sm mt-2"
-            >
-              <span>Learn more</span>
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function RationaleCritiqueCard({ review }) {
-  const qualityColors = {
-    5: 'text-green-700 bg-green-100',
-    4: 'text-green-700 bg-green-100',
-    3: 'text-amber-600 bg-yellow-100',
-    2: 'text-orange-600 bg-orange-100',
-    1: 'text-red-600 bg-red-100',
-  };
-  const style = qualityColors[review.quality_score] || qualityColors[3];
-
-  return (
-    <div className="p-4 bg-brand-lavender/30 rounded-lg border-l-4 border-brand-navy">
-      <div className="flex items-center justify-between mb-2">
-        <h4 className="font-medium text-brand-navy">Decision #{review.decision_index + 1}</h4>
-        <span className={clsx('text-xs px-2 py-1 rounded font-semibold', style)}>
-          Quality: {review.quality_score}/5
-        </span>
-      </div>
-      {review.user_rationale && (
-        <p className="text-brand-navy/60 text-sm mb-2 italic">
-          You said: "{review.user_rationale}"
-        </p>
-      )}
-      <p className="text-brand-navy/70 text-sm mb-3">{review.critique}</p>
-      {review.missed_factors?.length > 0 && (
-        <div className="mb-2">
-          <p className="text-xs text-brand-blue uppercase mb-1">Missed Factors</p>
-          <div className="flex flex-wrap gap-1">
-            {review.missed_factors.map((f, i) => (
-              <span key={i} className="text-xs px-2 py-0.5 bg-orange-100 text-orange-600 rounded">
-                {f}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-      {review.reasoning_bias && (
-        <p className="text-xs text-red-600">
-          Reasoning bias detected: {review.reasoning_bias}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function IsolatedCounterfactualCard({ data }) {
-  return (
-    <div className="p-4 bg-brand-lavender/30 rounded-lg border-l-4 border-brand-navy">
-      <div className="flex items-center justify-between mb-3">
-        <div>
-          <p className="text-xs text-brand-blue uppercase">Original</p>
-          <p className="text-brand-navy font-medium">{data.original_decision}</p>
-        </div>
-        <ArrowRight className="h-5 w-5 text-brand-navy mx-4" />
-        <div className="text-right">
-          <p className="text-xs text-brand-navy uppercase">Alternative</p>
-          <p className="text-brand-navy/80 font-medium">{data.alternative_decision}</p>
-        </div>
-      </div>
-      {data.ripple_effects?.length > 0 && (
-        <div className="mb-3">
-          <p className="text-xs text-brand-blue uppercase mb-1">Ripple Effects</p>
-          <div className="space-y-1">
-            {data.ripple_effects.map((effect, i) => (
-              <div key={i} className="flex items-start space-x-2 text-sm text-brand-navy/70">
-                <Zap className="h-3 w-3 text-brand-navy flex-shrink-0 mt-1" />
-                <span>{effect}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      <div className="p-3 bg-brand-lavender/30 rounded-lg border border-brand-blue/30">
-        <p className="text-sm text-brand-navy/70">
-          <span className="text-brand-navy font-medium">Causal Impact: </span>
-          {data.causal_impact}
-        </p>
-      </div>
-      <p className="text-sm text-brand-navy/70 italic mt-2">"{data.lesson}"</p>
-    </div>
-  );
-}
-
-function CalibrationCard({ data }) {
-  const total = data.overconfident_count + data.underconfident_count + data.well_calibrated_count;
-  if (total === 0) return null;
-
-  const pct = (count) => Math.round((count / total) * 100);
-  const scoreColor = data.calibration_score >= 70 ? 'text-green-700' :
-    data.calibration_score >= 40 ? 'text-amber-600' : 'text-red-600';
-
-  return (
-    <div className="card">
-      <h3 className="text-lg font-semibold text-brand-navy mb-4 flex items-center space-x-2">
-        <Target className="h-5 w-5 text-brand-navy" />
-        <span>Confidence Calibration</span>
-      </h3>
-      <div className="text-center mb-4">
-        <span className={clsx('text-4xl font-bold', scoreColor)}>{Math.round(data.calibration_score)}</span>
-        <span className="text-brand-navy/60 text-sm ml-1">/ 100</span>
-        <p className="text-brand-navy/60 text-sm mt-1">
-          How well your confidence matched actual outcomes
-        </p>
-      </div>
-      <div className="space-y-3">
-        {[
-          { label: 'Well Calibrated', count: data.well_calibrated_count, color: 'bg-green-500', textColor: 'text-green-700' },
-          { label: 'Overconfident', count: data.overconfident_count, color: 'bg-red-500', textColor: 'text-red-600' },
-          { label: 'Underconfident', count: data.underconfident_count, color: 'bg-yellow-500', textColor: 'text-amber-600' },
-        ].map((item) => (
-          <div key={item.label}>
-            <div className="flex justify-between text-sm mb-1">
-              <span className="text-brand-navy/60">{item.label}</span>
-              <span className={item.textColor}>{item.count} ({pct(item.count)}%)</span>
-            </div>
-            <div className="h-3 bg-brand-blue/20 rounded-full overflow-hidden">
-              <div className={clsx('h-full rounded-full transition-all duration-500', item.color)}
-                style={{ width: `${pct(item.count)}%` }} />
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function OutcomeDistributionChart({ data }) {
-  if (!data?.buckets?.length) return null;
-
-  const maxCount = Math.max(...data.buckets.map((b) => b.count));
-
-  return (
-    <div className="card">
-      <h3 className="text-lg font-semibold text-brand-navy mb-4 flex items-center space-x-2">
-        <BarChart2 className="h-5 w-5 text-brand-navy" />
-        <span>Outcome Distribution</span>
-      </h3>
-      <p className="text-brand-navy/60 text-sm mb-4">
-        Your decisions replayed across 100 different market scenarios
-      </p>
-
-      {/* Histogram */}
-      <div className="flex items-end gap-1 h-32 mb-2">
-        {data.buckets.map((bucket, i) => {
-          const height = maxCount > 0 ? (bucket.count / maxCount) * 100 : 0;
-          const isUserBucket = data.actual_outcome >= bucket.min && data.actual_outcome < bucket.max;
-          return (
-            <div key={i} className="flex-1 flex flex-col items-center justify-end h-full group relative">
-              <div
-                className={clsx(
-                  'w-full rounded-t transition-all duration-300',
-                  isUserBucket ? 'bg-brand-navy' : 'bg-brand-blue/30 group-hover:bg-brand-blue/40'
-                )}
-                style={{ height: `${Math.max(height, 2)}%` }}
-              />
-              {isUserBucket && (
-                <div className="absolute -top-6 text-xs text-brand-navy font-semibold whitespace-nowrap">
-                  You
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <div className="flex justify-between text-xs text-brand-blue">
-        <span>${data.buckets[0]?.min?.toFixed(0)}</span>
-        <span>${data.buckets[data.buckets.length - 1]?.max?.toFixed(0)}</span>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t border-brand-blue/20">
-        <div className="text-center">
-          <p className="text-xs text-brand-blue">Worst</p>
-          <p className="text-red-600 font-semibold">${data.worst_outcome?.toFixed(2)}</p>
-        </div>
-        <div className="text-center">
-          <p className="text-xs text-brand-blue">Median</p>
-          <p className="text-brand-navy/70 font-semibold">${data.median_outcome?.toFixed(2)}</p>
-        </div>
-        <div className="text-center">
-          <p className="text-xs text-brand-blue">Best</p>
-          <p className="text-green-700 font-semibold">${data.best_outcome?.toFixed(2)}</p>
-        </div>
-      </div>
-      <div className="text-center mt-3">
-        <p className="text-xs text-brand-blue">Your Percentile</p>
-        <p className="text-brand-navy font-bold text-lg">{data.user_percentile}th</p>
-      </div>
-    </div>
-  );
-}
-
 export default function Reflection() {
   const { simulationId } = useParams();
   const navigate = useNavigate();
@@ -436,12 +61,15 @@ export default function Reflection() {
   const [calibration, setCalibration] = useState(null);
   const [outcomeDistribution, setOutcomeDistribution] = useState(null);
   const [isolatedCf, setIsolatedCf] = useState({});
+  const [biasClassifier, setBiasClassifier] = useState(null);
+  const [confidenceCalibration, setConfidenceCalibration] = useState(null);
   const [loading, setLoading] = useState(true);
   const [secondaryLoading, setSecondaryLoading] = useState(true);
   const [showCounterfactuals, setShowCounterfactuals] = useState(false);
   const [showWhy, setShowWhy] = useState(false);
   const [showPro, setShowPro] = useState(false);
   const [showRationale, setShowRationale] = useState(false);
+  const [showAlgoBaseline, setShowAlgoBaseline] = useState(false);
   const [loadingIsolation, setLoadingIsolation] = useState({});
   const [secondaryError, setSecondaryError] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -527,7 +155,7 @@ export default function Reflection() {
 
     // Phase 2: Load secondary data in the background (non-blocking)
     try {
-      const [cfRes, whyRes, proRes, coachRes, heatmapRes, rationaleRes, calRes, outcomeRes] = await Promise.all([
+      const [cfRes, whyRes, proRes, coachRes, heatmapRes, rationaleRes, calRes, outcomeRes, biasClsRes, confCalRes] = await Promise.all([
         counterfactuals.length > 0 ? Promise.resolve({ data: counterfactuals }) : reflectionApi.getCounterfactuals(simulationId).catch(() => ({ data: [] })),
         reflectionApi.getWhyDecisions(simulationId).catch(() => ({ data: null })),
         reflectionApi.getProComparison(simulationId).catch(() => ({ data: null })),
@@ -536,6 +164,8 @@ export default function Reflection() {
         reflectionApi.getRationaleReview(simulationId).catch(() => ({ data: null })),
         reflectionApi.getCalibration(simulationId).catch(() => ({ data: null })),
         reflectionApi.getOutcomeDistribution(simulationId).catch(() => ({ data: null })),
+        reflectionApi.getBiasClassifier(simulationId).catch(() => ({ data: null })),
+        reflectionApi.getConfidenceCalibration(simulationId).catch(() => ({ data: null })),
       ]);
 
       if (cfRes.data?.length) setCounterfactuals(cfRes.data);
@@ -546,6 +176,8 @@ export default function Reflection() {
       setRationaleReview(rationaleRes.data);
       setCalibration(calRes.data);
       setOutcomeDistribution(outcomeRes.data);
+      setBiasClassifier(biasClsRes.data);
+      setConfidenceCalibration(confCalRes.data);
     } catch (err) {
       console.error('Failed to load secondary data:', err);
       setSecondaryError(true);
@@ -811,10 +443,12 @@ export default function Reflection() {
           </div>
         </div>
       ) : (calibration || outcomeDistribution) && (
+        <SectionErrorBoundary section="Calibration & Distribution">
         <div className="grid md:grid-cols-2 gap-6">
           {calibration && <CalibrationCard data={calibration} />}
           {outcomeDistribution && <OutcomeDistributionChart data={outcomeDistribution} />}
         </div>
+        </SectionErrorBoundary>
       )}
 
       {/* Bias Heatmap Timeline */}
@@ -828,7 +462,9 @@ export default function Reflection() {
           </div>
         </div>
       ) : biasHeatmap && biasHeatmap.timeline?.length > 0 && (
-        <BiasHeatmap data={biasHeatmap} />
+        <SectionErrorBoundary section="Bias Heatmap">
+          <BiasHeatmap data={biasHeatmap} />
+        </SectionErrorBoundary>
       )}
 
       {/* AI Unavailable Banner */}
@@ -860,6 +496,7 @@ export default function Reflection() {
 
       {/* Rationale Review */}
       {rationaleReview && rationaleReview.reviews?.length > 0 && (
+        <SectionErrorBoundary section="Rationale Review">
         <div className="card">
           <button
             onClick={() => setShowRationale(!showRationale)}
@@ -896,6 +533,7 @@ export default function Reflection() {
             </div>
           )}
         </div>
+        </SectionErrorBoundary>
       )}
 
       {/* Counterfactuals */}
@@ -968,6 +606,7 @@ export default function Reflection() {
 
       {/* Why This Decision? (with per-decision counterfactual isolation) */}
       {whyData && whyData.explanations?.length > 0 && (
+        <SectionErrorBoundary section="Why This Decision">
         <div className="card">
           <button
             onClick={() => setShowWhy(!showWhy)}
@@ -1066,10 +705,12 @@ export default function Reflection() {
             </div>
           )}
         </div>
+        </SectionErrorBoundary>
       )}
 
       {/* What Would a Pro Do? */}
       {proData && proData.pro_decisions?.length > 0 && (
+        <SectionErrorBoundary section="Pro Comparison">
         <div className="card">
           <button
             onClick={() => setShowPro(!showPro)}
@@ -1166,9 +807,283 @@ export default function Reflection() {
                   })) || []}
                 />
               )}
+
+              {/* Algorithmic Baseline */}
+              {proData.algorithmic_baseline && (
+                <div className="mt-4">
+                  <button
+                    onClick={() => setShowAlgoBaseline(!showAlgoBaseline)}
+                    className="flex items-center gap-2 text-sm font-semibold text-brand-navy hover:text-brand-navy-light transition-colors"
+                  >
+                    <Zap className="h-4 w-4" />
+                    Algorithmic Trader Baseline
+                    <ChevronRight className={clsx('h-4 w-4 transition-transform', showAlgoBaseline && 'rotate-90')} />
+                  </button>
+
+                  {showAlgoBaseline && (
+                    <div className="mt-3 space-y-3 animate-fadeIn">
+                      <p className="text-xs text-brand-navy/60">{proData.algorithmic_baseline.strategy_description}</p>
+
+                      {/* Algo outcome comparison */}
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="p-3 bg-brand-lavender/30 rounded-lg text-center">
+                          <p className="text-xs text-brand-navy/60 mb-1">Your P&L</p>
+                          <p className={clsx('text-lg font-bold', (proData.user_final_outcome?.profit_loss || 0) >= 0 ? 'text-green-700' : 'text-red-600')}>
+                            ${(proData.user_final_outcome?.profit_loss || 0).toFixed(2)}
+                          </p>
+                        </div>
+                        <div className="p-3 bg-amber-50 rounded-lg text-center border border-amber-200">
+                          <p className="text-xs text-amber-700 mb-1">Algo P&L</p>
+                          <p className={clsx('text-lg font-bold', (proData.algorithmic_baseline.algo_final_outcome?.profit_loss || 0) >= 0 ? 'text-green-700' : 'text-red-600')}>
+                            ${(proData.algorithmic_baseline.algo_final_outcome?.profit_loss || 0).toFixed(2)}
+                          </p>
+                        </div>
+                        <div className="p-3 bg-cyan-50 rounded-lg text-center border border-brand-blue/30">
+                          <p className="text-xs text-cyan-700 mb-1">AI Pro P&L</p>
+                          <p className={clsx('text-lg font-bold', (proData.pro_final_outcome?.profit_loss || 0) >= 0 ? 'text-green-700' : 'text-red-600')}>
+                            ${(proData.pro_final_outcome?.profit_loss || 0).toFixed(2)}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Algo trades */}
+                      <div className="text-xs text-brand-navy/60">
+                        <span className="font-semibold">{proData.algorithmic_baseline.algo_final_outcome?.total_trades || 0}</span> trades,{' '}
+                        <span className="font-semibold">${proData.algorithmic_baseline.algo_final_outcome?.cumulative_fees?.toFixed(2) || '0.00'}</span> in fees
+                      </div>
+
+                      {/* Strategy rules */}
+                      <div className="grid grid-cols-3 gap-2">
+                        {proData.algorithmic_baseline.rules?.map((r, i) => (
+                          <div key={i} className="text-xs p-2 bg-gray-50 rounded border border-gray-200">
+                            <span className="font-medium text-brand-navy">{r.rule.replace(/_/g, ' ')}</span>
+                            <p className="text-brand-navy/50 mt-0.5">{r.description}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Algo decision log */}
+                      {proData.algorithmic_baseline.algo_decisions?.length > 0 && (
+                        <details className="text-xs">
+                          <summary className="cursor-pointer font-semibold text-brand-navy/70 hover:text-brand-navy">
+                            View {proData.algorithmic_baseline.algo_decisions.length} algo trades
+                          </summary>
+                          <div className="mt-2 space-y-1 max-h-40 overflow-y-auto">
+                            {proData.algorithmic_baseline.algo_decisions.map((d, i) => (
+                              <div key={i} className="flex items-center gap-2 p-1.5 bg-gray-50 rounded">
+                                <span className="text-brand-navy/50">t={d.time}s</span>
+                                <span className={clsx('font-medium', d.action === 'buy' ? 'text-green-700' : 'text-red-600')}>
+                                  {d.action.toUpperCase()}
+                                </span>
+                                <span className="text-brand-navy/60">{d.amount?.toFixed?.(2)} @ ${d.price}</span>
+                                <span className="text-brand-navy/40 ml-auto">{d.reason}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
+        </SectionErrorBoundary>
+      )}
+
+      {/* Bias Classifier */}
+      {biasClassifier && biasClassifier.per_decision?.length > 0 && (
+        <SectionErrorBoundary section="Bias Classifier">
+        <div className="card p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center">
+              <BarChart2 className="h-5 w-5 text-purple-700" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-brand-navy">Bias Classifier</h3>
+              <p className="text-brand-navy/60 text-xs">Rule-based feature analysis of your decisions</p>
+            </div>
+          </div>
+
+          {/* Top biases */}
+          {biasClassifier.top_biases?.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-4">
+              {biasClassifier.top_biases.map((b, i) => (
+                <div key={i} className={clsx(
+                  'px-3 py-1.5 rounded-full text-xs font-medium',
+                  b.score > 0.5 ? 'bg-red-100 text-red-700' :
+                  b.score > 0.3 ? 'bg-amber-100 text-amber-700' :
+                  'bg-gray-100 text-gray-600'
+                )}>
+                  #{b.rank} {b.bias.replace(/_/g, ' ')} ({(b.score * 100).toFixed(0)}%)
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Aggregate scores bar chart */}
+          <div className="space-y-2 mb-4">
+            {Object.entries(biasClassifier.aggregate_scores || {})
+              .sort(([,a], [,b]) => b - a)
+              .map(([bias, score]) => (
+                <div key={bias} className="flex items-center gap-2">
+                  <span className="text-xs text-brand-navy/70 w-28 text-right">{bias.replace(/_/g, ' ')}</span>
+                  <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className={clsx(
+                        'h-full rounded-full transition-all duration-500',
+                        score > 0.5 ? 'bg-red-400' : score > 0.3 ? 'bg-amber-400' : 'bg-gray-300'
+                      )}
+                      style={{ width: `${Math.max(score * 100, 2)}%` }}
+                    />
+                  </div>
+                  <span className="text-xs text-brand-navy/50 w-10">{(score * 100).toFixed(0)}%</span>
+                </div>
+              ))}
+          </div>
+
+          {/* Gemini comparison */}
+          {biasClassifier.gemini_comparison && (
+            <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
+              <p className="text-xs font-semibold text-purple-700 mb-2">
+                Classifier vs AI Agreement: {(biasClassifier.gemini_comparison.agreement_rate * 100).toFixed(0)}%
+              </p>
+              <div className="space-y-1">
+                {biasClassifier.gemini_comparison.details?.map((d, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs">
+                    {d.agreement ? (
+                      <CheckCircle className="h-3.5 w-3.5 text-green-600 flex-shrink-0" />
+                    ) : (
+                      <AlertTriangle className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" />
+                    )}
+                    <span className="text-brand-navy/70">{d.bias.replace(/_/g, ' ')}</span>
+                    <span className="text-brand-navy/40 ml-auto">{d.note}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Feature importance */}
+          {biasClassifier.feature_importance && biasClassifier.top_biases?.[0] && (
+            <details className="mt-3 text-xs">
+              <summary className="cursor-pointer font-semibold text-brand-navy/70 hover:text-brand-navy">
+                Feature importance for top bias: {biasClassifier.top_biases[0].bias.replace(/_/g, ' ')}
+              </summary>
+              <div className="mt-2 space-y-1">
+                {(biasClassifier.feature_importance[biasClassifier.top_biases[0].bias] || []).map(([feat, imp], i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="text-brand-navy/60 w-40">{feat.replace(/_/g, ' ')}</span>
+                    <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-purple-400 rounded-full" style={{ width: `${imp * 100}%` }} />
+                    </div>
+                    <span className="text-brand-navy/40 w-10">{(imp * 100).toFixed(0)}%</span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+        </SectionErrorBoundary>
+      )}
+
+      {/* Confidence Calibration */}
+      {confidenceCalibration && (confidenceCalibration.calibrated_patterns?.length > 0 || confidenceCalibration.abstained_patterns?.length > 0) && (
+        <SectionErrorBoundary section="Confidence Calibration">
+        <div className="card p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-xl bg-teal-100 flex items-center justify-center">
+              <Search className="h-5 w-5 text-teal-700" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-brand-navy">Evidence Confidence</h3>
+              <p className="text-brand-navy/60 text-xs">{confidenceCalibration.summary}</p>
+            </div>
+            <span className={clsx(
+              'ml-auto text-xs px-2.5 py-1 rounded-full font-medium',
+              confidenceCalibration.overall_evidence_quality === 'strong' ? 'bg-green-100 text-green-700' :
+              confidenceCalibration.overall_evidence_quality === 'moderate' ? 'bg-amber-100 text-amber-700' :
+              'bg-gray-100 text-gray-600'
+            )}>
+              {confidenceCalibration.overall_evidence_quality} evidence
+            </span>
+          </div>
+
+          {/* Calibrated patterns */}
+          <div className="space-y-3">
+            {confidenceCalibration.calibrated_patterns?.map((p, i) => (
+              <div key={i} className="p-3 bg-brand-lavender/20 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-brand-navy">{p.pattern.replace(/_/g, ' ')}</span>
+                  <span className={clsx(
+                    'text-xs px-2 py-0.5 rounded-full font-medium',
+                    p.confidence_level === 'high' ? 'bg-green-100 text-green-700' :
+                    p.confidence_level === 'medium' ? 'bg-amber-100 text-amber-700' :
+                    'bg-gray-100 text-gray-600'
+                  )}>
+                    {p.confidence_level}
+                  </span>
+                </div>
+
+                {/* Confidence bars */}
+                <div className="grid grid-cols-2 gap-3 mb-2">
+                  <div>
+                    <p className="text-xs text-brand-navy/50 mb-1">AI confidence</p>
+                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-blue-400 rounded-full" style={{ width: `${p.gemini_confidence * 100}%` }} />
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs text-brand-navy/50 mb-1">Evidence score</p>
+                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-teal-400 rounded-full" style={{ width: `${p.evidence_score * 100}%` }} />
+                    </div>
+                  </div>
+                </div>
+
+                <p className="text-xs text-brand-navy/60">{p.reasoning}</p>
+
+                {/* Evidence details */}
+                <details className="mt-2">
+                  <summary className="text-xs cursor-pointer text-brand-navy/50 hover:text-brand-navy">
+                    {p.evidence_details?.filter(e => e.matched).length}/{p.evidence_details?.length} signals matched
+                  </summary>
+                  <div className="mt-1 space-y-0.5">
+                    {p.evidence_details?.map((e, j) => (
+                      <div key={j} className="flex items-start gap-1.5 text-xs">
+                        {e.matched ? (
+                          <CheckCircle className="h-3 w-3 text-green-600 flex-shrink-0 mt-0.5" />
+                        ) : (
+                          <X className="h-3 w-3 text-gray-300 flex-shrink-0 mt-0.5" />
+                        )}
+                        <span className={e.matched ? 'text-brand-navy/70' : 'text-brand-navy/40'}>{e.signal}</span>
+                        {e.detail && <span className="text-brand-navy/40 ml-auto">{e.detail}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              </div>
+            ))}
+
+            {/* Abstained patterns */}
+            {confidenceCalibration.abstained_patterns?.length > 0 && (
+              <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                <p className="text-xs font-semibold text-gray-600 mb-2">
+                  Insufficient Evidence ({confidenceCalibration.abstained_patterns.length} pattern{confidenceCalibration.abstained_patterns.length > 1 ? 's' : ''})
+                </p>
+                {confidenceCalibration.abstained_patterns.map((p, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs text-gray-500 mb-1">
+                    <HelpCircle className="h-3 w-3 flex-shrink-0" />
+                    <span>{p.pattern.replace(/_/g, ' ')}</span>
+                    <span className="ml-auto">AI said {(p.gemini_confidence * 100).toFixed(0)}% but no evidence found</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        </SectionErrorBoundary>
       )}
 
       {/* Collapse button */}

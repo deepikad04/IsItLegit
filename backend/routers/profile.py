@@ -1,18 +1,20 @@
 from datetime import datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from uuid import UUID
+
+from sqlalchemy import text
 
 from database import get_db
 from models.user import User
 from models.simulation import Simulation
 from models.decision import Decision
 from models.behavior_profile import BehaviorProfile
-from routers.auth import get_current_user
+from routers.auth import get_current_user, limiter
 from services.gemini_service import GeminiService
 from schemas.behavior_profile import (
     BehaviorProfileResponse,
@@ -209,73 +211,85 @@ async def get_community_stats(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db)
 ):
-    """Get aggregate stats across all users for community insights."""
+    """Get aggregate stats across all users for community insights.
+
+    Uses SQL aggregation to avoid loading all rows into memory.
+    """
+    # Single query for counts + avg score
     total_users = db.query(func.count(User.id)).scalar() or 0
     total_sims = db.query(func.count(Simulation.id)).filter(
         Simulation.status == "completed"
     ).scalar() or 0
     total_decisions = db.query(func.count(Decision.id)).scalar() or 0
-
     avg_score = db.query(func.avg(Simulation.process_quality_score)).filter(
         Simulation.status == "completed",
         Simulation.process_quality_score.isnot(None)
     ).scalar() or 0
 
-    # Most common bias across all profiles
-    profiles = db.query(BehaviorProfile).all()
-    bias_counts = {}
-    for p in profiles:
-        for bias_name, score in (p.profile_data or {}).get("bias_patterns", {}).items():
-            if score > 0.4:
-                bias_counts[bias_name] = bias_counts.get(bias_name, 0) + 1
-
+    # Most common bias — SQL JSONB extraction instead of loading all profiles
     top_bias = None
     top_bias_pct = 0
-    if bias_counts and total_users > 0:
-        top_bias = max(bias_counts, key=bias_counts.get)
-        top_bias_pct = round(bias_counts[top_bias] / max(total_users, 1) * 100)
+    try:
+        bias_row = db.execute(text("""
+            SELECT key AS bias_name, COUNT(*) AS cnt
+            FROM behavior_profiles,
+                 jsonb_each_text(
+                     COALESCE(profile_data -> 'bias_patterns', '{}'::jsonb)
+                 ) AS kv(key, value)
+            WHERE kv.value::float > 0.4
+            GROUP BY key
+            ORDER BY cnt DESC
+            LIMIT 1
+        """)).first()
+        if bias_row and total_users > 0:
+            top_bias = bias_row.bias_name
+            top_bias_pct = round(bias_row.cnt / max(total_users, 1) * 100)
+    except Exception:
+        pass  # Graceful fallback if JSONB query fails
 
-    # Most popular scenario
+    # Most popular scenario — single query with join
+    from models.scenario import Scenario
     popular = db.query(
-        Simulation.scenario_id,
+        Scenario.name,
         func.count(Simulation.id).label("cnt")
-    ).filter(
+    ).join(Simulation, Simulation.scenario_id == Scenario.id).filter(
         Simulation.status == "completed"
-    ).group_by(Simulation.scenario_id).order_by(func.count(Simulation.id).desc()).first()
+    ).group_by(Scenario.name).order_by(func.count(Simulation.id).desc()).first()
+    popular_scenario = popular.name if popular else None
 
-    popular_scenario = None
-    if popular:
-        from models.scenario import Scenario
-        sc = db.query(Scenario).filter(Scenario.id == popular[0]).first()
-        if sc:
-            popular_scenario = sc.name
+    # Score distribution — single SQL query with CASE
+    dist_row = db.execute(text("""
+        SELECT
+            COUNT(*) FILTER (WHERE process_quality_score < 30)  AS beginner,
+            COUNT(*) FILTER (WHERE process_quality_score >= 30 AND process_quality_score < 55) AS developing,
+            COUNT(*) FILTER (WHERE process_quality_score >= 55 AND process_quality_score < 80) AS proficient,
+            COUNT(*) FILTER (WHERE process_quality_score >= 80) AS expert
+        FROM simulations
+        WHERE status = 'completed' AND process_quality_score IS NOT NULL
+    """)).first()
+    distribution = {
+        "beginner": dist_row.beginner if dist_row else 0,
+        "developing": dist_row.developing if dist_row else 0,
+        "proficient": dist_row.proficient if dist_row else 0,
+        "expert": dist_row.expert if dist_row else 0,
+    }
 
-    # Score distribution
-    scores = db.query(Simulation.process_quality_score).filter(
-        Simulation.status == "completed",
-        Simulation.process_quality_score.isnot(None)
-    ).all()
-    distribution = {"beginner": 0, "developing": 0, "proficient": 0, "expert": 0}
-    for (s,) in scores:
-        if s < 30:
-            distribution["beginner"] += 1
-        elif s < 55:
-            distribution["developing"] += 1
-        elif s < 80:
-            distribution["proficient"] += 1
-        else:
-            distribution["expert"] += 1
-
-    # Current user's percentile
+    # User percentile — SQL instead of Python iteration
     user_avg = db.query(func.avg(Simulation.process_quality_score)).filter(
         Simulation.user_id == current_user.id,
         Simulation.status == "completed",
         Simulation.process_quality_score.isnot(None)
     ).scalar()
     user_percentile = None
-    if user_avg is not None and scores:
-        below = sum(1 for (s,) in scores if s < user_avg)
-        user_percentile = round(below / len(scores) * 100)
+    if user_avg is not None:
+        total_scores = sum(distribution.values())
+        if total_scores > 0:
+            below = db.query(func.count(Simulation.id)).filter(
+                Simulation.status == "completed",
+                Simulation.process_quality_score.isnot(None),
+                Simulation.process_quality_score < user_avg
+            ).scalar() or 0
+            user_percentile = round(below / total_scores * 100)
 
     return {
         "total_traders": total_users,
@@ -323,6 +337,80 @@ def calculate_overall_score(profile_data: dict) -> float:
     bonus = min(len(strengths) * 5, 20)
 
     return min(base_score + bonus, 100)
+
+
+@router.get("/behavior-history", summary="AI-analyzed behavioral history")
+@limiter.limit("5/minute")
+async def get_behavior_history(
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+):
+    """Gemini analyzes the user's full simulation history to discover patterns."""
+    # Build simulation history summary from DB
+    simulations = db.query(Simulation).filter(
+        Simulation.user_id == current_user.id,
+        Simulation.status == "completed",
+    ).order_by(Simulation.started_at).all()
+
+    if not simulations:
+        return {
+            "emerging_patterns": [],
+            "learning_trajectory": {
+                "overall_direction": "stagnating",
+                "process_quality_trend": [],
+                "breakthrough_moments": [],
+                "regression_points": [],
+                "trajectory_summary": "No simulations completed yet.",
+            },
+            "strengths": [],
+            "weaknesses": [],
+            "scenario_performance": {"best_category": "N/A", "worst_category": "N/A", "difficulty_impact": "N/A"},
+            "decision_style": "unknown",
+            "decision_style_evidence": "No data",
+            "stress_response": "unknown",
+            "stress_response_evidence": "No data",
+            "improvement_recommendations": [],
+            "history_analysis_reasoning": "Complete some simulations first.",
+        }
+
+    # Construct history summary for Gemini
+    history_summary = []
+    for sim in simulations:
+        outcome = sim.final_outcome or {}
+        top_biases = []
+        if sim.gemini_analysis:
+            for pat in sim.gemini_analysis.get("patterns_detected", [])[:3]:
+                top_biases.append({
+                    "bias": pat.get("pattern_name", ""),
+                    "score": pat.get("confidence", 0),
+                })
+
+        history_summary.append({
+            "simulation_id": str(sim.id),
+            "scenario_name": sim.scenario.name if sim.scenario else "Unknown",
+            "category": sim.scenario.category if sim.scenario else "unknown",
+            "difficulty": sim.scenario.difficulty if sim.scenario else 3,
+            "profit_loss": outcome.get("profit_loss", 0),
+            "process_quality_score": sim.process_quality_score,
+            "decisions_count": outcome.get("total_decisions", 0),
+            "top_biases": top_biases,
+            "timestamp": sim.started_at.isoformat() if sim.started_at else "unknown",
+        })
+
+    # Load existing profile
+    profile = db.query(BehaviorProfile).filter(
+        BehaviorProfile.user_id == current_user.id
+    ).first()
+    existing_profile = profile.profile_data if profile else None
+
+    # Gemini-first analysis
+    gemini = GeminiService()
+    result = await gemini.analyze_user_behavior_history(
+        history_summary=history_summary,
+        existing_profile=existing_profile,
+    )
+    return result
 
 
 def calculate_trend(trajectory: list) -> str:

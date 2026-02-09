@@ -1078,3 +1078,223 @@ class SimulationEngine:
             "best_outcome": round(outcomes[-1], 2) if outcomes else 0,
             "worst_outcome": round(outcomes[0], 2) if outcomes else 0,
         }
+
+    # ── ALGORITHMIC PRO TRADER ─────────────────────────────────────────
+
+    def run_algorithmic_trader(self, user_decisions: list) -> dict:
+        """Replay the same price timeline with a deterministic rule-based strategy.
+
+        Strategy: Momentum + Mean-Reversion + Stop-Loss
+        - Wait 20s to observe before first trade (patience)
+        - Use 20-period momentum (price vs. SMA) for direction
+        - Position size: max 5% of portfolio per trade
+        - Stop-loss: exit if position drops 3% from entry
+        - Take-profit: exit if position gains 8% from entry
+        - Don't trade during halts
+        - Don't trade on high spread (>1%)
+        - Re-enter after cooldown (10s after exit)
+
+        Returns dict with algo decisions, final outcome, and decision log.
+        """
+        init_balance = self.initial_balance
+        init_holdings = dict(self.initial_data.get("holdings", {}))
+
+        cash = init_balance
+        holdings = dict(init_holdings)
+        cumulative_fees = 0.0
+        peak_value = cash + holdings.get(self.asset, 0) * self.initial_price
+
+        fixed_fee = self.market_params["fixed_fee"]
+        pct_fee = self.market_params["pct_fee"]
+        base_spread = self.market_params["base_spread_pct"]
+
+        algo_decisions = []
+        position_entry_price = None
+        last_exit_time = -20  # cooldown tracker
+        sma_window = 20
+
+        for t in range(self.time_limit + 1):
+            price = self.price_timeline.get(t, self.initial_price)
+
+            # Skip during halts
+            if t in self.halt_periods:
+                continue
+
+            # Current portfolio value
+            hv = holdings.get(self.asset, 0) * price
+            total_value = cash + hv
+            peak_value = max(peak_value, total_value)
+
+            # Calculate SMA
+            lookback_start = max(0, t - sma_window)
+            prices = [self.price_timeline.get(s, self.initial_price)
+                      for s in range(lookback_start, t + 1)]
+            sma = sum(prices) / len(prices) if prices else price
+
+            # Calculate spread at this time
+            vol = self.volatility_timeline.get(t, 0.02)
+            spread = base_spread * (1.0 + min(4.0, vol / 0.02 * 2.0)) if base_spread > 0 else 0
+
+            current_holding = holdings.get(self.asset, 0)
+
+            # ── STOP-LOSS / TAKE-PROFIT CHECK ──
+            if current_holding > 0 and position_entry_price is not None:
+                pnl_pct = (price - position_entry_price) / position_entry_price
+
+                if pnl_pct <= -0.03:
+                    # Stop-loss: sell everything
+                    exec_price = price * (1 - spread / 2)
+                    revenue = current_holding * exec_price
+                    fees = fixed_fee + revenue * pct_fee
+                    cash += revenue - fees
+                    cumulative_fees += fees
+                    algo_decisions.append({
+                        "time": t,
+                        "action": "sell",
+                        "amount": current_holding,
+                        "price": round(exec_price, 2),
+                        "reason": f"Stop-loss triggered ({pnl_pct*100:.1f}% loss)",
+                        "rule": "stop_loss",
+                    })
+                    holdings[self.asset] = 0
+                    position_entry_price = None
+                    last_exit_time = t
+                    continue
+
+                if pnl_pct >= 0.08:
+                    # Take-profit: sell everything
+                    exec_price = price * (1 - spread / 2)
+                    revenue = current_holding * exec_price
+                    fees = fixed_fee + revenue * pct_fee
+                    cash += revenue - fees
+                    cumulative_fees += fees
+                    algo_decisions.append({
+                        "time": t,
+                        "action": "sell",
+                        "amount": current_holding,
+                        "price": round(exec_price, 2),
+                        "reason": f"Take-profit triggered ({pnl_pct*100:.1f}% gain)",
+                        "rule": "take_profit",
+                    })
+                    holdings[self.asset] = 0
+                    position_entry_price = None
+                    last_exit_time = t
+                    continue
+
+            # ── ENTRY LOGIC ──
+            # Wait 20s before first trade
+            if t < 20:
+                continue
+
+            # Cooldown after exit
+            if t - last_exit_time < 10:
+                continue
+
+            # Skip if spread is too high
+            if spread > 0.01:
+                continue
+
+            # Only evaluate every 5 seconds (not every tick)
+            if t % 5 != 0:
+                continue
+
+            momentum = (price - sma) / sma if sma > 0 else 0
+
+            if current_holding == 0 and momentum > 0.01:
+                # BUY: momentum is positive, price above SMA
+                max_spend = total_value * 0.05  # 5% position size
+                exec_price = price * (1 + spread / 2)
+                buy_amount = max_spend / exec_price
+                cost = buy_amount * exec_price
+                fees = fixed_fee + cost * pct_fee
+
+                if cost + fees <= cash:
+                    cash -= cost + fees
+                    holdings[self.asset] = holdings.get(self.asset, 0) + buy_amount
+                    cumulative_fees += fees
+                    position_entry_price = exec_price
+                    algo_decisions.append({
+                        "time": t,
+                        "action": "buy",
+                        "amount": round(buy_amount, 4),
+                        "price": round(exec_price, 2),
+                        "reason": f"Momentum buy (price {momentum*100:.1f}% above SMA)",
+                        "rule": "momentum_entry",
+                    })
+
+            elif current_holding > 0 and momentum < -0.02:
+                # SELL: momentum has turned negative significantly
+                exec_price = price * (1 - spread / 2)
+                revenue = current_holding * exec_price
+                fees = fixed_fee + revenue * pct_fee
+                cash += revenue - fees
+                cumulative_fees += fees
+                algo_decisions.append({
+                    "time": t,
+                    "action": "sell",
+                    "amount": current_holding,
+                    "price": round(exec_price, 2),
+                    "reason": f"Momentum reversal ({momentum*100:.1f}% below SMA)",
+                    "rule": "momentum_exit",
+                })
+                holdings[self.asset] = 0
+                position_entry_price = None
+                last_exit_time = t
+
+        # Final portfolio value
+        final_price = self.price_timeline.get(self.time_limit, self.initial_price)
+        final_hv = holdings.get(self.asset, 0) * final_price
+        final_value = cash + final_hv
+        init_hv = init_holdings.get(self.asset, 0) * self.initial_price
+        profit_loss = final_value - (init_balance + init_hv)
+
+        # Build timeline for chart overlay
+        algo_portfolio_timeline = []
+        sim_cash = init_balance
+        sim_holdings = dict(init_holdings)
+        decision_idx = 0
+        for t in range(0, self.time_limit + 1, max(1, self.time_limit // 60)):
+            # Apply any algo decisions up to this time
+            while decision_idx < len(algo_decisions) and algo_decisions[decision_idx]["time"] <= t:
+                d = algo_decisions[decision_idx]
+                if d["action"] == "buy":
+                    sim_cash -= d["amount"] * d["price"]
+                    sim_holdings[self.asset] = sim_holdings.get(self.asset, 0) + d["amount"]
+                elif d["action"] == "sell":
+                    sim_cash += d["amount"] * d["price"]
+                    sim_holdings[self.asset] = max(0, sim_holdings.get(self.asset, 0) - d["amount"])
+                decision_idx += 1
+
+            p = self.price_timeline.get(t, self.initial_price)
+            hv = sim_holdings.get(self.asset, 0) * p
+            algo_portfolio_timeline.append({
+                "time": t,
+                "value": round(sim_cash + hv, 2),
+            })
+
+        return {
+            "algo_decisions": algo_decisions,
+            "algo_final_outcome": {
+                "profit_loss": round(profit_loss, 2),
+                "final_value": round(final_value, 2),
+                "cumulative_fees": round(cumulative_fees, 2),
+                "total_trades": len(algo_decisions),
+            },
+            "algo_portfolio_timeline": algo_portfolio_timeline,
+            "strategy_description": (
+                "Momentum + Stop-Loss Strategy: Waits 20s to observe, buys when price is >1% above "
+                "20-period SMA, sells on momentum reversal or 3% stop-loss / 8% take-profit. "
+                "Position size capped at 5% of portfolio. Avoids trading during halts and high-spread periods."
+            ),
+            "rules": [
+                {"rule": "patience", "description": "Wait 20 seconds before first trade"},
+                {"rule": "momentum_entry", "description": "Buy when price >1% above 20-period SMA"},
+                {"rule": "position_size", "description": "Max 5% of portfolio per trade"},
+                {"rule": "stop_loss", "description": "Exit if position drops 3% from entry"},
+                {"rule": "take_profit", "description": "Exit if position gains 8% from entry"},
+                {"rule": "momentum_exit", "description": "Exit if price drops >2% below SMA"},
+                {"rule": "spread_filter", "description": "Skip trades when spread >1%"},
+                {"rule": "halt_respect", "description": "No trading during circuit breaker halts"},
+                {"rule": "cooldown", "description": "10-second cooldown between trades"},
+            ],
+        }

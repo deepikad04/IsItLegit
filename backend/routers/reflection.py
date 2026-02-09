@@ -260,7 +260,7 @@ async def pro_comparison(
         scenario=simulation.scenario,
     )
 
-    # Attach price history for the ProReplayChart
+    # Attach price history + algorithmic pro trader baseline
     from services.simulation_engine import SimulationEngine
     engine = SimulationEngine(simulation.scenario)
     time_limit = simulation.scenario.time_pressure_seconds
@@ -269,8 +269,12 @@ async def pro_comparison(
         for t in range(0, time_limit + 1, max(1, time_limit // 60))
     ]
 
+    # Run algorithmic trader on same timeline
+    algo_result = engine.run_algorithmic_trader(decisions)
+
     data = result.model_dump(mode='json')
     data["price_history"] = price_history
+    data["algorithmic_baseline"] = algo_result
 
     _set_cached(simulation, "pro_comparison", data, db)
     return data
@@ -443,7 +447,9 @@ async def review_rationales(
 
 
 @router.get("/{simulation_id}/calibration", summary="Confidence calibration report")
+@limiter.limit("10/minute")
 async def get_calibration(
+    request: Request,
     simulation_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -457,7 +463,9 @@ async def get_calibration(
 
 
 @router.get("/{simulation_id}/outcome-distribution", summary="Monte Carlo outcome distribution")
+@limiter.limit("5/minute")
 async def get_outcome_distribution(
+    request: Request,
     simulation_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -470,13 +478,119 @@ async def get_outcome_distribution(
     return engine.monte_carlo_outcomes(decisions, n=100)
 
 
+@router.get("/{simulation_id}/bias-classifier", summary="AI-powered bias classification")
+@limiter.limit("10/minute")
+async def get_bias_classification(
+    request: Request,
+    simulation_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+):
+    """Classify biases using Gemini AI analysis of decision features + behavioral trace."""
+    simulation, decisions = await _load_completed_simulation(simulation_id, current_user, db)
+
+    # Check DB cache first
+    cached = _get_cached(simulation, "bias_classifier")
+    if cached:
+        return cached
+
+    from services.simulation_engine import SimulationEngine
+    from services.bias_classifier import extract_decision_features
+
+    engine = SimulationEngine(simulation.scenario)
+
+    # Extract numerical features for each decision (fed to Gemini alongside the trace)
+    decision_features = []
+    for i, d in enumerate(decisions):
+        features = extract_decision_features(
+            d, engine.price_timeline, engine.time_limit,
+            engine.initial_price, engine.initial_balance, decisions, i,
+        )
+        decision_features.append(features)
+
+    # Gemini-first: AI analyzes both qualitative trace + quantitative features
+    gemini = GeminiService()
+    result = await gemini.classify_biases_with_gemini(
+        simulation=simulation,
+        decisions=decisions,
+        scenario=simulation.scenario,
+        decision_features=decision_features,
+    )
+
+    _set_cached(simulation, "bias_classifier", result, db)
+    return result
+
+
+@router.get("/{simulation_id}/confidence-calibration", summary="AI self-evaluation of pattern confidence")
+@limiter.limit("10/minute")
+async def get_confidence_calibration(
+    request: Request,
+    simulation_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+):
+    """Gemini self-evaluates its pattern detections against observable evidence."""
+    simulation, decisions = await _load_completed_simulation(simulation_id, current_user, db)
+
+    # Check DB cache first
+    cached = _get_cached(simulation, "confidence_calibration")
+    if cached:
+        return cached
+
+    # Get the reflection analysis (must exist to have patterns)
+    if not simulation.gemini_analysis:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Run the reflection analysis first to get pattern detections",
+        )
+
+    patterns = simulation.gemini_analysis.get("patterns_detected", [])
+    if not patterns:
+        result = {
+            "calibrated_patterns": [],
+            "overall_evidence_quality": "weak",
+            "abstained_patterns": [],
+            "calibration_summary": "No patterns were detected in the reflection analysis.",
+        }
+        _set_cached(simulation, "confidence_calibration", result, db)
+        return result
+
+    # Gather observable evidence signals independently
+    from services.simulation_engine import SimulationEngine
+    from services.confidence_calibrator import _gather_evidence_signals
+
+    engine = SimulationEngine(simulation.scenario)
+    evidence_signals = _gather_evidence_signals(
+        patterns=patterns,
+        decisions=decisions,
+        price_timeline=engine.price_timeline,
+        events=engine.events,
+        time_limit=engine.time_limit,
+        initial_price=engine.initial_price,
+        initial_balance=engine.initial_balance,
+    )
+
+    # Gemini-first: AI self-evaluates its own detections against evidence
+    gemini = GeminiService()
+    result = await gemini.calibrate_pattern_confidence(
+        simulation=simulation,
+        decisions=decisions,
+        scenario=simulation.scenario,
+        patterns_detected=patterns,
+        evidence_signals=evidence_signals,
+    )
+
+    _set_cached(simulation, "confidence_calibration", result, db)
+    return result
+
+
 @router.get("/{simulation_id}/counterfactual-isolation", summary="Isolate impact of a single decision")
 @limiter.limit("5/minute")
 async def counterfactual_isolation(
     request: Request,
     simulation_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
     decision_index: int = Query(..., ge=0, description="Which decision to isolate"),
-    current_user: Annotated[User, Depends(get_current_user)] = None,
     db: Session = Depends(get_db),
 ):
     """Show causal impact of changing a single decision."""
@@ -485,10 +599,20 @@ async def counterfactual_isolation(
     if decision_index >= len(decisions):
         raise HTTPException(status_code=400, detail="Invalid decision index")
 
+    # Check DB cache (keyed by decision index)
+    cache_key = f"counterfactual_isolation_{decision_index}"
+    cached = _get_cached(simulation, cache_key)
+    if cached:
+        return cached
+
     gemini = GeminiService()
-    return await gemini.isolate_counterfactual(
+    result = await gemini.isolate_counterfactual(
         simulation=simulation,
         decisions=decisions,
         scenario=simulation.scenario,
         target_decision_index=decision_index,
     )
+
+    data = result.model_dump(mode='json') if hasattr(result, 'model_dump') else result
+    _set_cached(simulation, cache_key, data, db)
+    return result

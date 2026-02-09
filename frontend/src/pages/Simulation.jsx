@@ -7,158 +7,16 @@ import {
 } from 'recharts';
 import {
   Clock, TrendingUp, TrendingDown, DollarSign, AlertCircle,
-  MessageSquare, Users, Newspaper, ChevronUp, ChevronDown, Minus,
-  ShieldCheck, ShieldAlert, ShieldQuestion, Zap, CheckCircle, XCircle,
-  Pause, Eye, Globe, MessageCircle, Twitter, Hash, FastForward,
-  Activity, Ban, BarChart3, AlertTriangle, Target, Layers,
-  Play, Shield, Gauge, Radio, Heart, Repeat2, ArrowRight, X
+  ChevronUp, ChevronDown, Minus, Zap, CheckCircle,
+  Ban, AlertTriangle, Target, Eye, FastForward, X, ShieldAlert
 } from 'lucide-react';
 import clsx from 'clsx';
 import CoachNudge from '../components/CoachNudge';
-
-/* ─── Helper components ─────────────────────────────────────────── */
-
-const CredibilityBadge = ({ credibility }) => {
-  if (credibility == null) return null;
-  if (credibility >= 0.7) return (
-    <span className="inline-flex items-center gap-1 ml-2 text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 flex-shrink-0">
-      <ShieldCheck className="h-3 w-3" /> Reliable
-    </span>
-  );
-  if (credibility >= 0.4) return (
-    <span className="inline-flex items-center gap-1 ml-2 text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 flex-shrink-0">
-      <ShieldQuestion className="h-3 w-3" /> Uncertain
-    </span>
-  );
-  return (
-    <span className="inline-flex items-center gap-1 ml-2 text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-800 flex-shrink-0">
-      <ShieldAlert className="h-3 w-3" /> Unreliable
-    </span>
-  );
-};
-
-const TOAST_CONFIG = {
-  buy:  { icon: TrendingUp,   color: 'bg-emerald-600', label: 'Buy Order Placed' },
-  sell: { icon: TrendingDown,  color: 'bg-red-600',    label: 'Sell Order Placed' },
-  hold: { icon: Pause,         color: 'bg-blue-600',   label: 'Holding Position' },
-  wait: { icon: Eye,           color: 'bg-amber-600',  label: 'Waiting for Info' },
-  end:  { icon: CheckCircle,   color: 'bg-purple-600', label: 'Simulation Ended' },
-  partial: { icon: AlertTriangle, color: 'bg-orange-600', label: 'Partial Fill' },
-  halted: { icon: Ban, color: 'bg-red-700', label: 'Market Halted' },
-  limit_placed: { icon: Target, color: 'bg-indigo-600', label: 'Limit Order Placed' },
-  stop_placed: { icon: ShieldAlert, color: 'bg-amber-700', label: 'Stop Order Placed' },
-  order_filled: { icon: CheckCircle, color: 'bg-emerald-600', label: 'Order Filled' },
-};
-
-const SentimentTag = ({ sentiment }) => {
-  if (!sentiment || sentiment === 'event') return null;
-  const colors = {
-    bullish: 'text-emerald-800 bg-emerald-100',
-    bearish: 'text-red-800 bg-red-100',
-    neutral: 'text-gray-700 bg-gray-100',
-    fearful: 'text-orange-800 bg-orange-100',
-  };
-  return (
-    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${colors[sentiment] || colors.neutral}`}>
-      {sentiment}
-    </span>
-  );
-};
-
-const volLabel = (vol) => {
-  if (vol == null) return null;
-  if (vol < 0.01) return { text: 'Low', color: 'text-emerald-700', bg: 'bg-emerald-50' };
-  if (vol < 0.03) return { text: 'Med', color: 'text-amber-700', bg: 'bg-amber-50' };
-  return { text: 'High', color: 'text-red-700', bg: 'bg-red-50' };
-};
-
-/* ─── News/Social helpers ────────────────────────────────────────── */
-
-const NEWS_SOURCES = ['Reuters', 'Bloomberg', 'MarketWatch', 'CNBC', 'WSJ'];
-const UNVERIFIED_SOURCES = ['Anonymous Tip', 'Forum Post', 'Unverified Source', 'Social Media'];
-const USERNAMES = ['@trader_mike', '@crypto_whale', '@market_guru', '@wall_st_wolf', '@penny_picker',
-  '@bull_runner', '@bear_hunter', '@options_queen', '@value_victor', '@swing_king',
-  '@diamond_hands', '@chart_master', '@risk_taker', '@steady_eddie', '@alpha_seeker'];
-const AVATAR_COLORS = ['bg-blue-500', 'bg-purple-500', 'bg-pink-500', 'bg-indigo-500',
-  'bg-teal-500', 'bg-orange-500', 'bg-cyan-500', 'bg-rose-500', 'bg-emerald-500', 'bg-violet-500'];
-
-function hashStr(str) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) - hash) + str.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash);
-}
-
-function getNewsSource(item) {
-  if (item.unverified) {
-    return UNVERIFIED_SOURCES[hashStr(item.content) % UNVERIFIED_SOURCES.length];
-  }
-  return NEWS_SOURCES[hashStr(item.content) % NEWS_SOURCES.length];
-}
-
-function getSocialUser(content) {
-  const h = hashStr(content);
-  const username = USERNAMES[h % USERNAMES.length];
-  const initials = username.slice(1, 3).toUpperCase();
-  const color = AVATAR_COLORS[h % AVATAR_COLORS.length];
-  return { username, initials, color };
-}
-
-function getEngagement(content, sentiment) {
-  const h = hashStr(content);
-  const base = sentiment === 'bullish' || sentiment === 'bearish' ? 3 : 1;
-  const likes = (h % 40) * base + 2;
-  const reposts = Math.floor(likes * 0.3) + (h % 5);
-  return { likes, reposts };
-}
-
-function relativeTime(itemTime, currentTime) {
-  const diff = currentTime - itemTime;
-  if (diff <= 0) return 'Just now';
-  if (diff < 60) return `${diff}s ago`;
-  return `${Math.floor(diff / 60)}m ago`;
-}
-
-function isBreaking(itemTime, currentTime) {
-  return currentTime - itemTime <= 10;
-}
-
-/* ─── Feature badges for briefing ────────────────────────────────── */
-
-const FEATURE_LABELS = {
-  order_types_enabled: { label: 'Order Types', icon: Target, desc: 'Limit & stop orders available' },
-  halts_enabled: { label: 'Circuit Breakers', icon: Ban, desc: 'Trading halts on big moves' },
-  volatility_clustering: { label: 'Volatility Clustering', icon: Activity, desc: 'GARCH-style vol surges' },
-  crowd_model_enabled: { label: 'Crowd Behavior', icon: Users, desc: 'Herd sentiment affects prices' },
-  margin_enabled: { label: 'Margin Trading', icon: Layers, desc: 'Leverage & margin calls' },
-  news_latency_enabled: { label: 'News Delays', icon: Clock, desc: 'Breaking news arrives late' },
-  time_pressure_fills: { label: 'Time Pressure', icon: Gauge, desc: 'Prices move while you decide' },
-  secondary_asset: { label: 'Correlated Asset', icon: BarChart3, desc: 'A second asset moves in tandem' },
-};
-
-function getActiveFeatures(marketParams) {
-  if (!marketParams) return [];
-  const features = [];
-  for (const [key, meta] of Object.entries(FEATURE_LABELS)) {
-    if (marketParams[key]) features.push(meta);
-  }
-  if (marketParams.base_spread_pct > 0.003) {
-    features.push({ label: 'Wide Spreads', icon: ArrowRight, desc: 'Bid-ask spread is significant' });
-  }
-  if (marketParams.fixed_fee > 1 || marketParams.pct_fee > 0.001) {
-    features.push({ label: 'High Fees', icon: DollarSign, desc: 'Transaction costs eat into profits' });
-  }
-  if (marketParams.max_drawdown_pct) {
-    features.push({ label: 'Risk Limits', icon: Shield, desc: `Max drawdown: ${(marketParams.max_drawdown_pct * 100).toFixed(0)}%` });
-  }
-  return features;
-}
-
-const DIFFICULTY_LABELS = ['', 'Beginner', 'Easy', 'Medium', 'Hard', 'Extreme'];
-const DIFFICULTY_COLORS = ['', 'text-emerald-600 bg-emerald-100', 'text-blue-600 bg-blue-100',
-  'text-amber-600 bg-amber-100', 'text-orange-600 bg-orange-100', 'text-red-600 bg-red-100'];
+import SimulationBriefing from '../components/simulation/SimulationBriefing';
+import InfoPanels from '../components/simulation/InfoPanels';
+import DecisionHistoryDrawer from '../components/simulation/DecisionHistoryDrawer';
+import MarketConditionsTicker from '../components/simulation/MarketConditionsTicker';
+import { TOAST_CONFIG } from '../components/simulation/helpers';
 
 /* ─── Main component ────────────────────────────────────────────── */
 
@@ -630,108 +488,13 @@ export default function Simulation() {
   /* ─── Briefing Screen ──────────────────────────────────────── */
 
   if (phase === 'briefing' && scenario) {
-    const mp = scenario.initial_data?.market_params || {};
-    const features = getActiveFeatures(mp);
-    const initialData = scenario.initial_data || {};
-    const holdings = initialData.holdings || {};
-    const hasHoldings = Object.keys(holdings).length > 0;
-
     return (
-      <div className="min-h-screen bg-brand-cream flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-xl max-w-2xl w-full overflow-hidden">
-          {/* Header */}
-          <div className="bg-brand-navy p-6 text-white">
-            <div className="flex items-center justify-between mb-3">
-              <h1 className="text-2xl font-black">{scenario.name}</h1>
-              <span className={clsx(
-                'text-xs font-black px-3 py-1.5 rounded-full uppercase tracking-wide',
-                DIFFICULTY_COLORS[scenario.difficulty] || 'text-gray-600 bg-gray-100'
-              )}>
-                {DIFFICULTY_LABELS[scenario.difficulty] || 'Unknown'}
-              </span>
-            </div>
-            <p className="text-white/80 text-sm leading-relaxed">{scenario.description}</p>
-          </div>
-
-          {/* Starting Conditions */}
-          <div className="p-6 border-b border-gray-200">
-            <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">Starting Conditions</h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-gray-50 rounded-xl p-3.5 text-center">
-                <p className="text-xs font-bold text-gray-400 uppercase mb-1">Asset</p>
-                <p className="text-lg font-black text-gray-900">{initialData.asset}</p>
-              </div>
-              <div className="bg-gray-50 rounded-xl p-3.5 text-center">
-                <p className="text-xs font-bold text-gray-400 uppercase mb-1">Price</p>
-                <p className="text-lg font-black text-gray-900">${initialData.price?.toFixed(2)}</p>
-              </div>
-              <div className="bg-gray-50 rounded-xl p-3.5 text-center">
-                <p className="text-xs font-bold text-gray-400 uppercase mb-1">Cash</p>
-                <p className="text-lg font-black text-emerald-700">${initialData.your_balance?.toLocaleString()}</p>
-              </div>
-              <div className="bg-gray-50 rounded-xl p-3.5 text-center">
-                <p className="text-xs font-bold text-gray-400 uppercase mb-1">Time</p>
-                <p className="text-lg font-black text-gray-900">{Math.floor(scenario.time_pressure_seconds / 60)}:{(scenario.time_pressure_seconds % 60).toString().padStart(2, '0')}</p>
-              </div>
-            </div>
-            {hasHoldings && (
-              <div className="mt-3 p-3 bg-blue-50 rounded-xl border border-blue-200">
-                <p className="text-sm font-bold text-blue-800">
-                  You already own: {Object.entries(holdings).map(([asset, qty]) => `${qty} shares of ${asset}`).join(', ')}
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* Market Features */}
-          {features.length > 0 && (
-            <div className="p-6 border-b border-gray-200">
-              <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">Active Market Features</h2>
-              <div className="flex flex-wrap gap-2">
-                {features.map((feat, i) => (
-                  <div key={i} className="group relative flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 hover:bg-gray-100 transition-colors cursor-default">
-                    <feat.icon className="h-4 w-4 text-brand-navy flex-shrink-0" />
-                    <span className="text-sm font-bold text-gray-800">{feat.label}</span>
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                      {feat.desc}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Market Sentiment */}
-          <div className="p-6 border-b border-gray-200">
-            <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Market Mood</h2>
-            <div className="flex items-center gap-3">
-              <span className={clsx(
-                'text-sm font-black px-4 py-2 rounded-full capitalize',
-                initialData.market_sentiment === 'bullish' ? 'bg-emerald-100 text-emerald-800' :
-                initialData.market_sentiment === 'bearish' ? 'bg-red-100 text-red-800' :
-                'bg-gray-100 text-gray-700'
-              )}>
-                {initialData.market_sentiment || 'Neutral'}
-              </span>
-              {initialData.news_headlines?.[0] && (
-                <p className="text-sm text-gray-600 italic">"{initialData.news_headlines[0].content}"</p>
-              )}
-            </div>
-          </div>
-
-          {/* Start Button */}
-          <div className="p-6 flex items-center justify-between">
-            <button onClick={() => navigate('/dashboard')} className="text-sm font-semibold text-gray-400 hover:text-gray-700 transition-colors">
-              Back to Dashboard
-            </button>
-            <button onClick={startSimulation} disabled={loading}
-              className="flex items-center gap-3 bg-brand-navy text-white px-8 py-4 rounded-xl font-bold text-lg hover:bg-brand-navy-light transition-all shadow-lg hover:shadow-xl active:scale-[0.98]">
-              <Play className="h-6 w-6" />
-              {loading ? 'Starting...' : 'Begin Simulation'}
-            </button>
-          </div>
-        </div>
-      </div>
+      <SimulationBriefing
+        scenario={scenario}
+        loading={loading}
+        onStart={startSimulation}
+        onBack={() => navigate('/dashboard')}
+      />
     );
   }
 
@@ -805,7 +568,7 @@ export default function Simulation() {
           )}>
             <span className="text-xl flex-shrink-0">{biasAlert.icon}</span>
             <div className="flex-1">
-              <p className="text-xs font-black uppercase tracking-wider mb-0.5 opacity-80">Bias Detector</p>
+              <p className="text-xs font-black uppercase tracking-wider mb-0.5 opacity-80">Pattern Alert</p>
               <p className="text-sm font-bold leading-snug">{biasAlert.text}</p>
             </div>
             <button onClick={() => setBiasAlert(null)} className="text-white/60 hover:text-white flex-shrink-0">
@@ -872,93 +635,14 @@ export default function Simulation() {
       </div>
 
       {/* ─── Market Conditions Ticker ───────────────────────────── */}
-      {mc && (
-        <div className="flex flex-wrap items-center gap-2 mb-5 p-3 bg-white rounded-xl border border-gray-200 shadow-md">
-          {/* Bid / Ask */}
-          {mc.bid != null && (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-lg">
-              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Bid</span>
-              <span className="text-sm font-bold text-emerald-700">${mc.bid.toFixed(2)}</span>
-              <span className="text-gray-300">/</span>
-              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Ask</span>
-              <span className="text-sm font-bold text-red-700">${mc.ask.toFixed(2)}</span>
-            </div>
-          )}
-
-          {/* Spread */}
-          {mc.spread_pct != null && (
-            <div className={clsx(
-              'px-3 py-1.5 rounded-lg text-xs font-bold',
-              mc.spread_pct < 0.005 ? 'bg-emerald-100 text-emerald-800' :
-              mc.spread_pct < 0.015 ? 'bg-amber-100 text-amber-800' :
-              'bg-red-100 text-red-800'
-            )}>
-              Spread {(mc.spread_pct * 100).toFixed(2)}%
-            </div>
-          )}
-
-          {/* Volatility */}
-          {mc.volatility != null && (() => {
-            const vl = volLabel(mc.volatility);
-            return vl && (
-              <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold ${vl.bg} ${vl.color}`}>
-                <Activity className="h-3.5 w-3.5" />
-                {vl.text} Vol
-              </div>
-            );
-          })()}
-
-          {/* Crowd */}
-          {crowdSentiment != null && (
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 rounded-lg">
-              <Users className="h-3.5 w-3.5 text-gray-500" />
-              <span className={clsx(
-                'text-xs font-bold',
-                crowdSentiment > 0.6 ? 'text-emerald-700' :
-                crowdSentiment < 0.4 ? 'text-red-700' : 'text-amber-700'
-              )}>
-                {Math.round(crowdSentiment * 100)}% buying
-              </span>
-            </div>
-          )}
-
-          {/* Fees */}
-          {fees > 0.01 && (
-            <div className="flex items-center gap-1 px-3 py-1.5 bg-gray-50 rounded-lg text-xs font-bold text-gray-700">
-              <DollarSign className="h-3.5 w-3.5 text-gray-500" />
-              Fees: ${fees.toFixed(2)}
-            </div>
-          )}
-
-          {/* Drawdown */}
-          {drawdownPct > 0.02 && (
-            <div className={clsx(
-              'px-3 py-1.5 rounded-lg text-xs font-bold',
-              drawdownPct < 0.10 ? 'bg-amber-100 text-amber-800' :
-              drawdownPct < 0.20 ? 'bg-orange-100 text-orange-800' :
-              'bg-red-100 text-red-800'
-            )}>
-              Drawdown {(drawdownPct * 100).toFixed(1)}%
-            </div>
-          )}
-
-          {/* Margin */}
-          {marginStatus && marginStatus !== 'ok' && (
-            <div className={clsx(
-              'px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wide',
-              marginStatus === 'margin_call' ? 'bg-red-600 text-white' : 'bg-orange-100 text-orange-800'
-            )}>
-              {marginStatus === 'margin_call' ? 'MARGIN CALL' : 'Margin Warning'}
-            </div>
-          )}
-
-          {isHalted && (
-            <div className="px-3 py-1.5 rounded-lg text-xs font-black bg-red-600 text-white uppercase tracking-wide animate-pulse">
-              HALTED
-            </div>
-          )}
-        </div>
-      )}
+      <MarketConditionsTicker
+        mc={mc}
+        fees={fees}
+        drawdownPct={drawdownPct}
+        marginStatus={marginStatus}
+        crowdSentiment={crowdSentiment}
+        isHalted={isHalted}
+      />
 
       {/* ─── Main Grid ──────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
@@ -1098,238 +782,15 @@ export default function Simulation() {
           )}
         </div>
 
-        {/* ─── Info Panels Card ──────────────────────────────────── */}
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-md flex flex-col">
-          {/* Tabs */}
-          <div className="flex border-b border-gray-200">
-            {[
-              { id: 'news', icon: Newspaper, label: 'News' },
-              { id: 'social', icon: Users, label: 'Social' },
-              ...(macro ? [{ id: 'macro', icon: BarChart3, label: 'Macro' }] : []),
-            ].map((tab) => (
-              <button key={tab.id} onClick={() => switchPanel(tab.id)}
-                className={clsx(
-                  'flex-1 flex items-center justify-center gap-2 py-3.5 text-sm font-semibold border-b-2 transition-colors',
-                  activePanel === tab.id
-                    ? 'border-brand-navy text-brand-navy bg-gray-50'
-                    : 'border-transparent text-gray-400 hover:text-gray-700'
-                )}
-              >
-                <tab.icon className="h-4 w-4" />
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Panel content */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3 max-h-[260px] sm:max-h-[360px]">
-
-            {/* NEWS — Enhanced */}
-            {activePanel === 'news' && (
-              state.available_info?.news?.map((item, i) => {
-                const source = getNewsSource(item);
-                const breaking = isBreaking(item.time, timeElapsed);
-                const timeAgo = relativeTime(item.time, timeElapsed);
-                return (
-                  <div key={i} className={clsx(
-                    'p-3.5 rounded-xl border',
-                    breaking ? 'bg-red-50 border-red-300' : 'bg-gray-50 border-gray-200'
-                  )}>
-                    <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                      <Globe className="h-4 w-4 text-blue-600 flex-shrink-0" />
-                      <span className="text-xs font-bold text-blue-700 uppercase tracking-wide">{source}</span>
-                      {breaking && (
-                        <span className="text-xs font-black px-2 py-0.5 rounded-full bg-red-600 text-white uppercase animate-pulse">
-                          Breaking
-                        </span>
-                      )}
-                      {item.unverified && (
-                        <span className="text-xs font-black px-2 py-0.5 rounded-full bg-orange-500 text-white uppercase">
-                          Unverified
-                        </span>
-                      )}
-                      <CredibilityBadge credibility={item.credibility} />
-                    </div>
-                    <p className={clsx(
-                      'text-sm leading-relaxed',
-                      breaking ? 'text-gray-900 font-bold' : 'text-gray-800 font-medium'
-                    )}>{item.content}</p>
-                    <div className="flex items-center gap-3 mt-2">
-                      <span className="text-xs font-semibold text-gray-400">{timeAgo}</span>
-                      {item.delayed && (
-                        <span className="text-xs font-bold text-orange-600 flex items-center gap-1">
-                          <Clock className="h-3 w-3" /> Delayed
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })
-            )}
-
-            {/* SOCIAL — Enhanced */}
-            {activePanel === 'social' && (
-              <>
-                {crowdSentiment != null && (
-                  <div className="p-3.5 bg-gray-50 rounded-xl border border-gray-200">
-                    <div className="flex items-center gap-3">
-                      <Users className="h-5 w-5 text-gray-500 flex-shrink-0" />
-                      <div className="flex-1">
-                        <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Market Crowd</p>
-                        <div className="flex items-center gap-3">
-                          <div className="flex-1 bg-gray-200 rounded-full h-3 overflow-hidden">
-                            <div
-                              className={clsx(
-                                'h-full rounded-full transition-all duration-700',
-                                crowdSentiment > 0.6 ? 'bg-emerald-500' :
-                                crowdSentiment < 0.4 ? 'bg-red-500' : 'bg-amber-500'
-                              )}
-                              style={{ width: `${crowdSentiment * 100}%` }}
-                            />
-                          </div>
-                          <span className="text-sm font-black text-gray-900 w-20 text-right">
-                            {Math.round(crowdSentiment * 100)}% buy
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                {state.available_info?.social?.map((item, i) => {
-                  const user = getSocialUser(item.content);
-                  const engagement = getEngagement(item.content, item.sentiment);
-                  const timeAgo = relativeTime(item.time, timeElapsed);
-                  const isPlatformX = hashStr(item.content) % 3 !== 0; // ~66% X, ~33% Reddit
-                  return (
-                    <div key={i} className="p-3.5 bg-gray-50 rounded-xl border border-gray-200">
-                      <div className="flex items-start gap-3">
-                        {/* Avatar */}
-                        <div className={clsx(
-                          'w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-black flex-shrink-0',
-                          user.color
-                        )}>
-                          {user.initials}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          {/* Username + platform */}
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-sm font-bold text-gray-900">{user.username}</span>
-                            {isPlatformX ? (
-                              <Twitter className="h-3.5 w-3.5 text-gray-400" />
-                            ) : (
-                              <Hash className="h-3.5 w-3.5 text-orange-500" />
-                            )}
-                            <span className="text-xs text-gray-400">{timeAgo}</span>
-                            {item.unverified && (
-                              <span className="text-xs font-black px-2 py-0.5 rounded-full bg-orange-500 text-white uppercase">
-                                Unverified
-                              </span>
-                            )}
-                          </div>
-                          {/* Content */}
-                          <p className="text-sm text-gray-800 font-medium leading-relaxed">{item.content}</p>
-                          {/* Engagement + sentiment */}
-                          <div className="flex items-center gap-4 mt-2">
-                            <span className="flex items-center gap-1 text-xs text-gray-400 hover:text-red-500 cursor-default">
-                              <Heart className="h-3.5 w-3.5" /> {engagement.likes}
-                            </span>
-                            <span className="flex items-center gap-1 text-xs text-gray-400 hover:text-emerald-500 cursor-default">
-                              <Repeat2 className="h-3.5 w-3.5" /> {engagement.reposts}
-                            </span>
-                            <SentimentTag sentiment={item.sentiment} />
-                            <CredibilityBadge credibility={item.credibility} />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </>
-            )}
-
-            {/* MACRO */}
-            {activePanel === 'macro' && macro && (
-              <div className="space-y-3">
-                {macro.interest_rate_direction && (
-                  <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <BarChart3 className="h-5 w-5 text-gray-500" />
-                        <span className="text-sm font-bold text-gray-800">Interest Rates</span>
-                      </div>
-                      <span className={clsx(
-                        'text-sm font-black px-3 py-1 rounded-full',
-                        macro.interest_rate_direction === 'up' ? 'bg-red-100 text-red-800' :
-                        macro.interest_rate_direction === 'down' ? 'bg-emerald-100 text-emerald-800' :
-                        'bg-gray-100 text-gray-700'
-                      )}>
-                        {macro.interest_rate_direction === 'up' ? 'Rising' :
-                         macro.interest_rate_direction === 'down' ? 'Falling' : 'Flat'}
-                      </span>
-                    </div>
-                  </div>
-                )}
-                {macro.market_breadth != null && (
-                  <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Layers className="h-5 w-5 text-gray-500" />
-                      <span className="text-sm font-bold text-gray-800">Market Breadth</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="flex-1 bg-gray-200 rounded-full h-3 overflow-hidden">
-                        <div
-                          className={clsx(
-                            'h-full rounded-full',
-                            macro.market_breadth > 0.6 ? 'bg-emerald-500' :
-                            macro.market_breadth < 0.4 ? 'bg-red-500' : 'bg-amber-500'
-                          )}
-                          style={{ width: `${macro.market_breadth * 100}%` }}
-                        />
-                      </div>
-                      <span className="text-sm font-black text-gray-900 w-20 text-right">
-                        {Math.round(macro.market_breadth * 100)}% adv
-                      </span>
-                    </div>
-                  </div>
-                )}
-                {macro.vix != null && (
-                  <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-2">
-                        <Activity className="h-5 w-5 text-gray-500" />
-                        <span className="text-sm font-bold text-gray-800">Volatility Index</span>
-                      </div>
-                      <span className={clsx(
-                        'text-2xl font-black',
-                        macro.vix < 15 ? 'text-emerald-600' :
-                        macro.vix < 25 ? 'text-amber-600' : 'text-red-600'
-                      )}>
-                        {macro.vix.toFixed(1)}
-                      </span>
-                    </div>
-                    <p className="text-xs font-medium text-gray-500">
-                      {macro.vix < 15 ? 'Low fear — calm markets' :
-                       macro.vix < 25 ? 'Moderate uncertainty' : 'High fear — elevated risk'}
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Recent events */}
-          {state.recent_events?.length > 0 && (
-            <div className="p-4 border-t border-gray-200">
-              <div className="flex items-center gap-2 mb-2">
-                <Radio className="h-3.5 w-3.5 text-red-500 animate-pulse" />
-                <p className="text-xs font-bold text-red-600 uppercase tracking-wider">Live</p>
-              </div>
-              {state.recent_events.slice(-2).map((event, i) => (
-                <p key={i} className="text-sm text-amber-700 font-bold leading-relaxed">{event.content}</p>
-              ))}
-            </div>
-          )}
-        </div>
+        {/* ─── Info Panels ──────────────────────────────────────── */}
+        <InfoPanels
+          state={state}
+          activePanel={activePanel}
+          onSwitchPanel={switchPanel}
+          crowdSentiment={crowdSentiment}
+          macro={macro}
+          timeElapsed={timeElapsed}
+        />
       </div>
 
       {/* ─── Decision Panel ─────────────────────────────────────── */}
@@ -1538,61 +999,12 @@ export default function Simulation() {
         </div>
       </div>
 
-      {/* Decision History Panel */}
-      {showHistory && (
-        <div className="fixed right-0 top-0 bottom-0 w-full sm:w-80 bg-white border-l border-gray-200 shadow-2xl z-40 flex flex-col">
-          <div className="flex items-center justify-between p-4 border-b border-gray-200">
-            <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider">Your Moves</h3>
-            <button onClick={() => setShowHistory(false)} className="text-gray-400 hover:text-gray-700">
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {decisionHistory.length === 0 ? (
-              <div className="text-center py-8">
-                <Minus className="h-8 w-8 text-gray-300 mx-auto mb-2" />
-                <p className="text-sm text-gray-400">No decisions yet</p>
-                <p className="text-xs text-gray-300 mt-1">Your moves will appear here</p>
-              </div>
-            ) : (
-              decisionHistory.map((d, i) => (
-                <div key={i} className={clsx(
-                  'p-3 rounded-xl border text-sm',
-                  d.type === 'buy' ? 'bg-emerald-50 border-emerald-200' :
-                  d.type === 'sell' ? 'bg-red-50 border-red-200' :
-                  d.type === 'hold' ? 'bg-blue-50 border-blue-200' :
-                  'bg-amber-50 border-amber-200'
-                )}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className={clsx(
-                      'font-bold uppercase text-xs tracking-wide',
-                      d.type === 'buy' ? 'text-emerald-700' :
-                      d.type === 'sell' ? 'text-red-700' :
-                      d.type === 'hold' ? 'text-blue-700' :
-                      'text-amber-700'
-                    )}>
-                      #{i + 1} {d.type}
-                    </span>
-                    <span className="text-xs text-gray-400">{Math.floor(d.time / 60)}:{(d.time % 60).toString().padStart(2, '0')}</span>
-                  </div>
-                  {(d.type === 'buy' || d.type === 'sell') && (
-                    <p className="text-xs text-gray-600">
-                      ${d.amount} @ ${d.price?.toFixed(2)}
-                      {d.orderType !== 'market' && ` (${d.orderType})`}
-                    </p>
-                  )}
-                  {d.rationale && (
-                    <p className="text-xs text-gray-500 mt-1 italic truncate">"{d.rationale}"</p>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-          <div className="p-4 border-t border-gray-200 bg-gray-50">
-            <p className="text-xs text-gray-400 text-center">{decisionHistory.length} decisions made</p>
-          </div>
-        </div>
-      )}
+      {/* Decision History Drawer */}
+      <DecisionHistoryDrawer
+        show={showHistory}
+        onClose={() => setShowHistory(false)}
+        decisions={decisionHistory}
+      />
     </div>
   );
 }

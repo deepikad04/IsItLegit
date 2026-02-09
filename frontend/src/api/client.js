@@ -87,6 +87,8 @@ export const reflectionApi = {
     api.get(`/reflection/${simulationId}/counterfactual-isolation`, { params: { decision_index: decisionIndex } }),
   getCalibration: (simulationId) => api.get(`/reflection/${simulationId}/calibration`),
   getOutcomeDistribution: (simulationId) => api.get(`/reflection/${simulationId}/outcome-distribution`),
+  getBiasClassifier: (simulationId) => api.get(`/reflection/${simulationId}/bias-classifier`),
+  getConfidenceCalibration: (simulationId) => api.get(`/reflection/${simulationId}/confidence-calibration`),
 };
 
 export const learningApi = {
@@ -106,6 +108,7 @@ export const profileApi = {
   trackPlaybook: (simulationId) =>
     api.post('/profile/playbook/track', null, { params: { simulation_id: simulationId } }),
   getCommunityStats: () => api.get('/profile/community-stats'),
+  getBehaviorHistory: () => api.get('/profile/behavior-history'),
 };
 
 export default api;

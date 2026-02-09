@@ -9,7 +9,81 @@ Built with React, FastAPI, PostgreSQL, and Google Gemini.
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green)
 ![Gemini](https://img.shields.io/badge/Google%20Gemini-AI-orange)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
-![Tests](https://img.shields.io/badge/Tests-187%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-167%20passing-brightgreen)
+
+---
+
+## Why This Matters
+
+Financial literacy programs teach *what* to do but not *how you actually behave* under pressure. Research shows that **cognitive biases cause 80% of retail investor losses** — yet no existing tool measures or trains against them.
+
+IsItLegit is the first platform that:
+- **Instruments the decision process itself** — not just outcomes
+- **Uses AI to discover behavioral patterns** — biases are emergent from data, not pre-programmed
+- **Separates luck from skill** — so users learn from good decisions, not lucky outcomes
+- **Adapts to each user** — AI generates personalized scenarios targeting individual weak spots
+
+### Who Benefits
+- **Individual investors** learning to recognize their own biases before trading real money
+- **Finance educators** who need a tool to demonstrate behavioral finance concepts experientially
+- **Financial advisors** who want clients to understand their own risk behavior
+- **Anyone making high-stakes decisions** — the cognitive patterns transfer to hiring, negotiation, and strategy
+
+---
+
+## Data Flow: How Decisions Become Insights
+
+```
+ USER ACTIONS                    BACKEND PIPELINE                   AI ANALYSIS
+ ───────────                    ─────────────────                  ────────────
+
+ ┌──────────┐    SSE stream     ┌─────────────────┐
+ │  Trade   │ ──────────────▶  │ Simulation       │
+ │  Buy/Sell│    decisions      │ Engine           │
+ │  /Hold   │    + rationales   │ (deterministic)  │
+ └──────────┘                   │                  │
+      │                         │ ● Price timeline │
+      │                         │ ● 14 realism     │
+      │                         │   features       │
+      │                         │ ● Portfolio math  │
+      │                         └────────┬─────────┘
+      │                                  │
+      │         ┌────────────────────────┼────────────────────────┐
+      │         │     PostgreSQL         │                        │
+      │         │                        ▼                        │
+      │         │  ┌──────────┐  ┌──────────────┐  ┌──────────┐  │
+      └────────▶│  │Decisions │  │ Simulations  │  │Behavior  │  │
+                │  │          │  │              │  │Profiles  │  │
+                │  │● type    │  │● final_outcome│ │          │  │
+                │  │● timing  │  │● gemini_cache │ │● biases  │  │
+                │  │● conf.   │  │● analysis    │  │● style   │  │
+                │  │● rationale│ │              │  │● history │  │
+                │  └─────┬────┘  └──────┬───────┘  └────┬─────┘  │
+                │        │              │               │         │
+                └────────┼──────────────┼───────────────┼─────────┘
+                         │              │               │
+                         ▼              ▼               ▼
+                  ┌─────────────────────────────────────────┐
+                  │         Gemini Service (18+ calls)      │
+                  │                                         │
+                  │  Decision trace + features ──▶ Gemini   │
+                  │                                  │      │
+                  │  Schema-validated JSON ◀──────────┘     │
+                  │                                         │
+                  │  ● Bias detection    ● Counterfactuals  │
+                  │  ● Pro comparison    ● Coaching         │
+                  │  ● Confidence cal.   ● History analysis │
+                  └──────────────┬──────────────────────────┘
+                                 │
+                                 ▼
+                  ┌─────────────────────────────────────────┐
+                  │         Persisted to gemini_cache       │
+                  │         (JSONB column on Simulation)    │
+                  │                                         │
+                  │  First request:  Gemini API call        │
+                  │  Subsequent:     Instant DB lookup       │
+                  └─────────────────────────────────────────┘
+```
 
 ---
 
@@ -21,7 +95,7 @@ Built with React, FastAPI, PostgreSQL, and Google Gemini.
 
 ### Pre-seeded Demo Accounts
 
-Two accounts are pre-loaded with full simulation history, AI analysis, and behavior profiles so you can explore the complete experience without running any simulations yourself:
+Two accounts are pre-loaded with raw behavioral data (decisions, rationales, outcomes). AI analysis is generated on-demand by Gemini when you view the reflection page — demonstrating the data-to-insight pipeline live:
 
 | Account | Email | Password | What to See |
 |---------|-------|----------|-------------|
@@ -185,7 +259,7 @@ This project uses **6 distinct Gemini API capabilities** — not just chat compl
 | **URL Context** | `UrlContext` tool reads article URLs to generate custom scenarios from real financial news. Extracts `url_context_metadata` with retrieval statuses | `generate_scenario_from_url()` |
 | **Mock Fallbacks** | Every Gemini call has a deterministic heuristic fallback (`USE_MOCK_GEMINI=true`) so the app runs without an API key | All call types |
 
-### All 15+ Gemini Call Types
+### All 18+ Gemini Call Types
 
 | Endpoint | Call Type | Thinking | What It Does |
 |----------|-----------|----------|--------------|
@@ -202,6 +276,9 @@ This project uses **6 distinct Gemini API capabilities** — not just chat compl
 | POST /verify-credibility | grounding | low | Fact-checks a claim against real web sources |
 | POST /generate-from-url | url_context | high | Creates scenario from a news article URL |
 | Profile update | `profile_update` | low | Updates persistent behavior profile |
+| GET /bias-classifier | `bias_classifier` | high | AI classifies biases from qualitative trace + quantitative features |
+| GET /confidence-calibration | `confidence_calibration` | high | AI self-evaluates pattern detections against evidence |
+| GET /behavior-history | `behavior_history` | high | Longitudinal analysis of user's full simulation history |
 | Batch analysis | `batch` | high | Multi-simulation pattern analysis |
 | Isolation | `isolate` | high | Single-bias deep dive |
 
@@ -236,10 +313,16 @@ The simulation engine (`simulation_engine.py`, 1070+ lines) implements these fea
 - **Progressive difficulty** — easier scenarios use fewer features; harder ones stack them all
 - **7 built-in scenarios** including "The Perfect Storm" (difficulty 5, all 14 features active)
 
-### AI Analysis (Google Gemini)
+### AI Analysis (Google Gemini — Reasoning Layer, Not a Wrapper)
+
+Gemini acts as the **reasoning layer** that discovers patterns from raw behavioral data. We supply structured decision traces and numerical features; Gemini performs the actual analysis. Insights are emergent, not hand-authored.
+
 - **Bias detection** — identifies FOMO, loss aversion, anchoring, impulsivity, and social proof patterns
+- **AI bias classifier** — Gemini analyzes both qualitative decision traces AND quantitative features (timing, price context, position sizing, info usage) to produce per-decision bias scores with evidenced reasoning
+- **Confidence calibration** — Gemini self-evaluates its own pattern detections against independently gathered observable evidence, producing High/Medium/Low/Insufficient confidence labels
+- **Behavioral history analysis** — Gemini analyzes a user's full simulation history to discover emerging patterns, learning trajectories, and decision style — patterns are discovered, not pre-computed
 - **"Why did I do that?"** — explains what likely drove each decision using behavioral psychology
-- **"What would a pro do?"** — side-by-side comparison with an expert decision path
+- **"What would a pro do?"** — side-by-side comparison with an expert + algorithmic baseline (rule-based momentum/stop-loss trader replaying the same price timeline)
 - **Counterfactual timelines** — "what if you had sold 30 seconds earlier?"
 - **Adaptive coaching** — personalized tips based on your evolving behavior profile
 - **AI-generated scenarios** — Gemini creates custom scenarios targeting your specific weaknesses
@@ -290,7 +373,7 @@ docker compose up --build
 
 ### Seed Demo Data (optional)
 
-Pre-populate the database with two demo accounts that have full simulation history, AI analysis, and behavior profiles — so you can explore the complete experience immediately:
+Pre-populate the database with two demo accounts containing raw behavioral data (decisions, rationales, outcomes, timestamps):
 
 ```bash
 cd backend && python seed_demo.py
@@ -300,6 +383,16 @@ cd backend && python seed_demo.py
 |---------|-------|----------|-------------|-----------|
 | **demo_trader** | demo@isitlegit.com | demo1234 | 20 sims, 30 days | FOMO losses → patience → contrarian mastery (25 → 88 process score) |
 | **alex_novice** | alex@isitlegit.com | alex1234 | 12 sims, 10 days | Beginner mistakes → slowly improving (28 → 58 process score) |
+
+### Pre-compute AI Analysis (optional, requires GEMINI_API_KEY)
+
+After seeding demo data, run Gemini analysis on the behavioral data and persist results to DB. This ensures instant reflection results without waiting for API calls:
+
+```bash
+cd backend && python seed_analysis.py
+```
+
+This runs 8 Gemini analysis types (reflection, counterfactuals, why, pro-comparison, bias heatmap, rationale review, bias classifier, coaching) on the 5 most recent simulations per user, plus behavior history analysis. Results are stored in the `gemini_cache` JSONB column.
 
 ### Without Docker
 
@@ -344,18 +437,29 @@ Set `USE_MOCK_GEMINI=true` to run without a Gemini API key (uses heuristic fallb
 ```
 IsItLegit/
 ├── backend/
-│   ├── routers/          # API endpoints (auth, scenarios, simulations, reflection, profile, learning)
-│   ├── models/           # SQLAlchemy models (User, Scenario, Simulation, Decision, BehaviorProfile)
-│   ├── schemas/          # Pydantic request/response schemas
+│   ├── routers/              # API endpoints (auth, scenarios, simulations, reflection, profile, learning)
+│   ├── models/               # SQLAlchemy models (User, Scenario, Simulation, Decision, BehaviorProfile)
+│   ├── schemas/              # Pydantic request/response schemas
 │   ├── services/
-│   │   ├── gemini_service.py       # All Gemini API calls with retries, caching, and fallbacks
-│   │   └── simulation_engine.py    # Deterministic market simulation (1070+ lines)
-│   ├── data/             # Scenario JSON templates and learning cards
-│   └── tests/            # pytest suite (158 tests)
+│   │   ├── gemini/           # Gemini AI package (split from monolith)
+│   │   │   ├── service.py    #   GeminiService class — 18+ call types (~3600 lines)
+│   │   │   ├── schemas.py    #   Pydantic output schemas for structured JSON (~350 lines)
+│   │   │   └── helpers.py    #   Module-level caches, constants, helpers (~135 lines)
+│   │   ├── gemini_service.py # Backward-compatible re-export (thin wrapper)
+│   │   ├── simulation_engine.py    # Deterministic market simulation + algorithmic pro trader
+│   │   ├── bias_classifier.py      # Feature extraction for bias classification
+│   │   └── confidence_calibrator.py # Evidence signal gathering for calibration
+│   ├── data/                 # Scenario JSON templates and learning cards
+│   ├── tests/                # pytest suite (167 tests)
+│   ├── seed_demo.py          # Seeds demo users with raw behavioral data
+│   └── seed_analysis.py      # Runs Gemini on seeded data, persists AI analysis to DB
 ├── frontend/
-│   ├── src/pages/        # Dashboard, Simulation, Reflection, Profile, Learning, Home
-│   ├── src/components/   # BiasHeatmap, ProReplayChart, CoachNudge, Layout
-│   └── src/api/          # Axios API client
+│   ├── src/pages/            # Dashboard, Simulation, Reflection, Profile, Learning, Home
+│   ├── src/components/
+│   │   ├── reflection/       # Extracted: ProcessGauge, PatternCard, CalibrationCard, etc.
+│   │   ├── simulation/       # SimulationBriefing, InfoPanels, etc.
+│   │   └── ...               # BiasHeatmap, ProReplayChart, CoachNudge, Layout
+│   └── src/api/              # Axios API client
 └── docker-compose.yml
 ```
 
@@ -368,7 +472,7 @@ cd backend
 pytest
 ```
 
-187 tests (158 backend + 29 frontend) covering schema validation, simulation engine determinism, Gemini advanced features, and UI components.
+167 tests covering schema validation, simulation engine determinism, Gemini advanced features, bias classifier, and confidence calibration.
 
 ---
 
@@ -383,5 +487,3 @@ Planned features for future development:
 - **Spaced repetition for bias training** — schedule scenario replays targeting biases that are fading from memory
 - **Community scenario marketplace** — users create and share custom scenarios with difficulty ratings and bias tags
 - **Export to portfolio tracker** — integrate with brokerage APIs to compare simulated decisions with real trading behavior
-
----

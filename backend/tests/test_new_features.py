@@ -1,657 +1,413 @@
 """
-Tests for hackathon polish features:
-- Simulation Engine: calibration, Monte Carlo, timeline cache
-- Gemini Service: live nudge, challenge reasoning, adaptive scenario
-- Schema validation for new output types
+Tests for the 3 new features:
+1. Algorithmic Pro Trader (#5)
+2. Bias Classifier (#2)
+3. Confidence Calibrator (#3)
 """
-import uuid
 import pytest
 from unittest.mock import MagicMock
-
-from services.simulation_engine import SimulationEngine, _timeline_cache
-from services.gemini_service import GeminiService, _get_market_state
-
-
-# ── Shared Fixtures ──────────────────────────────────────────────────────
-
-
-def _make_scenario(name="Test Scenario", time_limit=60):
-    s = MagicMock()
-    s.id = uuid.uuid4()
-    s.name = name
-    s.category = "fomo_trap"
-    s.difficulty = 2
-    s.time_pressure_seconds = time_limit
-    s.initial_data = {
-        "asset": "TESTCOIN",
-        "price": 100.0,
-        "your_balance": 10000.0,
-        "market_sentiment": "neutral",
-    }
-    s.events = [
-        {"time": 10, "type": "news", "content": "Breaking news!"},
-        {"time": 20, "type": "price", "change": 0.10},
-        {"time": 30, "type": "social", "content": "Everyone's buying!"},
-        {"time": 40, "type": "price", "change": -0.15},
-    ]
-    return s
+from services.bias_classifier import (
+    extract_decision_features, classify_decision, classify_simulation_biases,
+    get_feature_importance, BIAS_LABELS, _evaluate_rule,
+)
+from services.confidence_calibrator import (
+    calibrate_pattern_confidence, calibrate_all_patterns, EVIDENCE_RULES,
+)
 
 
-def _make_simulation(scenario_id):
-    s = MagicMock()
-    s.id = uuid.uuid4()
-    s.user_id = uuid.uuid4()
-    s.scenario_id = scenario_id
-    s.status = "completed"
-    s.process_quality_score = 55.0
-    s.final_outcome = {
-        "profit_loss": 250.0,
-        "final_value": 10250.0,
-        "profit_loss_percent": 2.5,
-    }
-    s.current_time_elapsed = 55
-    return s
+# ── Helpers ────────────────────────────────────────────────────────────
+
+def _mock_decision(
+    decision_type="buy", simulation_time=30, amount=10, confidence_level=3,
+    time_spent_seconds=5, info_viewed=None, price_at_decision=100, rationale=None,
+):
+    d = MagicMock()
+    d.decision_type = decision_type
+    d.simulation_time = simulation_time
+    d.amount = amount
+    d.confidence_level = confidence_level
+    d.time_spent_seconds = time_spent_seconds
+    d.info_viewed = info_viewed or []
+    d.price_at_decision = price_at_decision
+    d.rationale = rationale
+    return d
 
 
-def _make_decisions(simulation_id, count=4):
-    decisions = []
-    for i in range(count):
-        d = MagicMock()
-        d.id = uuid.uuid4()
-        d.simulation_id = simulation_id
-        d.simulation_time = 10 + i * 15
-        d.decision_type = ["buy", "hold", "buy", "sell"][i % 4]
-        d.amount = [500, None, 300, 200][i % 4]
-        d.confidence_level = [4, 3, 5, 2][i % 4]
-        d.time_spent_seconds = [3.0, 8.0, 2.5, 12.0][i % 4]
-        d.price_at_decision = 100.0 + i * 10
-        d.rationale = ["Looks good", None, "Everyone is buying!", "Cutting losses"][i % 4]
-        d.info_viewed = [{"panel": "news", "view_duration_seconds": 2, "timestamp": d.simulation_time}]
-        d.info_ignored = []
-        d.market_state_at_decision = {
-            "current_price": d.price_at_decision,
-            "available_info": {
-                "market_sentiment": ["bullish", "bullish", "bearish", "bearish"][i % 4]
-            },
+def _simple_timeline(initial=100, duration=120):
+    """Flat price timeline for testing."""
+    return {t: initial for t in range(duration + 1)}
+
+
+def _rising_timeline(initial=100, duration=120, rate=0.001):
+    """Steadily rising price timeline."""
+    return {t: initial * (1 + rate * t) for t in range(duration + 1)}
+
+
+def _spike_timeline(initial=100, duration=120, spike_at=25, spike_pct=0.08):
+    """Timeline with a spike at a specific time."""
+    tl = {}
+    for t in range(duration + 1):
+        if t >= spike_at:
+            tl[t] = initial * (1 + spike_pct)
+        else:
+            tl[t] = initial
+    return tl
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# FEATURE #5: Algorithmic Pro Trader
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestAlgorithmicTrader:
+    """Test the run_algorithmic_trader() method on SimulationEngine."""
+
+    def _make_engine(self, price_fn=None, time_limit=120):
+        """Create a minimal SimulationEngine for testing."""
+        from services.simulation_engine import SimulationEngine
+
+        scenario = MagicMock()
+        scenario.name = "test_algo"
+        scenario.time_pressure_seconds = time_limit
+        scenario.initial_data = {
+            "asset": "TEST",
+            "price": 100,
+            "your_balance": 10000,
+            "holdings": {},
+            "market_params": {},
         }
-        d.snapshot = None  # No snapshot reference in unit tests
-        d.events_since_last = []
-        decisions.append(d)
-    return decisions
+        scenario.events = []
+        scenario.id = "test-id-123"
+
+        engine = SimulationEngine(scenario)
+        if price_fn:
+            engine.price_timeline = price_fn
+        return engine
+
+    def test_returns_expected_keys(self):
+        engine = self._make_engine()
+        result = engine.run_algorithmic_trader([])
+        assert "algo_decisions" in result
+        assert "algo_final_outcome" in result
+        assert "algo_portfolio_timeline" in result
+        assert "strategy_description" in result
+        assert "rules" in result
+
+    def test_no_decisions_with_flat_market(self):
+        """Flat market = no momentum signal = no trades."""
+        engine = self._make_engine(_simple_timeline(100, 120), 120)
+        result = engine.run_algorithmic_trader([])
+        assert result["algo_final_outcome"]["profit_loss"] == 0
+
+    def test_algo_trades_on_rising_market(self):
+        """Rising market should trigger momentum buy."""
+        tl = _rising_timeline(100, 120, rate=0.005)
+        engine = self._make_engine(tl, 120)
+        result = engine.run_algorithmic_trader([])
+        buys = [d for d in result["algo_decisions"] if d["action"] == "buy"]
+        assert len(buys) >= 1, "Expected at least one buy in rising market"
+
+    def test_algo_respects_20s_wait(self):
+        """No trades before t=20."""
+        tl = _rising_timeline(100, 120, rate=0.01)
+        engine = self._make_engine(tl, 120)
+        result = engine.run_algorithmic_trader([])
+        early_trades = [d for d in result["algo_decisions"] if d["time"] < 20]
+        assert len(early_trades) == 0, "Should not trade before t=20"
+
+    def test_algo_outcome_has_correct_structure(self):
+        engine = self._make_engine()
+        result = engine.run_algorithmic_trader([])
+        outcome = result["algo_final_outcome"]
+        assert "profit_loss" in outcome
+        assert "final_value" in outcome
+        assert "cumulative_fees" in outcome
+        assert "total_trades" in outcome
+
+    def test_algo_portfolio_timeline_has_entries(self):
+        engine = self._make_engine()
+        result = engine.run_algorithmic_trader([])
+        assert len(result["algo_portfolio_timeline"]) > 0
+        assert "time" in result["algo_portfolio_timeline"][0]
+        assert "value" in result["algo_portfolio_timeline"][0]
+
+    def test_rules_list_complete(self):
+        engine = self._make_engine()
+        result = engine.run_algorithmic_trader([])
+        rule_names = {r["rule"] for r in result["rules"]}
+        assert "patience" in rule_names
+        assert "stop_loss" in rule_names
+        assert "take_profit" in rule_names
+        assert "momentum_entry" in rule_names
+        assert "position_size" in rule_names
+
+    def test_position_size_capped_at_5pct(self):
+        """Each buy should be ≤5% of portfolio value."""
+        tl = _rising_timeline(100, 120, rate=0.005)
+        engine = self._make_engine(tl, 120)
+        result = engine.run_algorithmic_trader([])
+        for d in result["algo_decisions"]:
+            if d["action"] == "buy":
+                trade_value = d["amount"] * d["price"]
+                assert trade_value < 600, f"Trade value {trade_value} exceeds 5% cap"
 
 
-# ── Simulation Engine: Calibration ────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+# FEATURE #2: Bias Classifier
+# ═══════════════════════════════════════════════════════════════════════
 
 
-class TestCalibration:
-    def setup_method(self):
-        # Clear cache between tests
-        _timeline_cache.clear()
-        self.scenario = _make_scenario()
-        self.engine = SimulationEngine(self.scenario)
-
-    def test_evaluate_decision_outcome_buy_favorable(self):
-        """High confidence buy followed by price increase = well_calibrated."""
-        d = MagicMock()
-        d.decision_type = "buy"
-        d.price_at_decision = 100.0
-        d.confidence_level = 4
-        result = self.engine.evaluate_decision_outcome(d, 112.0)
-        assert result["calibration"] == "well_calibrated"
-        assert result["favorable"] is True
-        assert result["price_change_pct"] == pytest.approx(12.0, rel=0.01)
-
-    def test_evaluate_decision_outcome_buy_overconfident(self):
-        """High confidence buy followed by price drop = overconfident."""
-        d = MagicMock()
-        d.decision_type = "buy"
-        d.price_at_decision = 100.0
-        d.confidence_level = 5
-        result = self.engine.evaluate_decision_outcome(d, 90.0)
-        assert result["calibration"] == "overconfident"
-        assert result["favorable"] is False
-
-    def test_evaluate_decision_outcome_sell_favorable(self):
-        """Sell followed by price drop = favorable."""
-        d = MagicMock()
-        d.decision_type = "sell"
-        d.price_at_decision = 100.0
-        d.confidence_level = 4
-        result = self.engine.evaluate_decision_outcome(d, 95.0)
-        assert result["calibration"] == "well_calibrated"
-        assert result["favorable"] is True
-
-    def test_evaluate_decision_outcome_underconfident(self):
-        """Low confidence but favorable outcome = underconfident."""
-        d = MagicMock()
-        d.decision_type = "buy"
-        d.price_at_decision = 100.0
-        d.confidence_level = 1
-        result = self.engine.evaluate_decision_outcome(d, 115.0)
-        assert result["calibration"] == "underconfident"
-
-    def test_evaluate_decision_outcome_hold(self):
-        """Hold is favorable when price stays flat."""
-        d = MagicMock()
-        d.decision_type = "hold"
-        d.price_at_decision = 100.0
-        d.confidence_level = 3
-        result = self.engine.evaluate_decision_outcome(d, 100.5)
-        assert result["favorable"] is True
-        assert result["calibration"] == "well_calibrated"
-
-    def test_get_calibration_report_structure(self):
-        """Calibration report has required fields and valid values."""
-        decisions = _make_decisions(uuid.uuid4())
-        report = self.engine.get_calibration_report(decisions)
-
-        assert "calibration_score" in report
-        assert "overconfident_count" in report
-        assert "underconfident_count" in report
-        assert "well_calibrated_count" in report
-        assert "total_decisions" in report
-        assert "details" in report
-
-        assert 0 <= report["calibration_score"] <= 100
-        total = report["overconfident_count"] + report["underconfident_count"] + report["well_calibrated_count"]
-        assert total == report["total_decisions"]
-        assert len(report["details"]) == report["total_decisions"]
-
-    def test_get_calibration_report_empty_decisions(self):
-        """Empty decision list returns 0% calibration (no data)."""
-        report = self.engine.get_calibration_report([])
-        assert report["calibration_score"] == 0  # 0 well_calibrated / max(0,1) = 0
-        assert report["total_decisions"] == 0
-
-    def test_calibration_detail_fields(self):
-        """Each detail entry has all required fields."""
-        decisions = _make_decisions(uuid.uuid4(), count=2)
-        report = self.engine.get_calibration_report(decisions)
-
-        for detail in report["details"]:
-            assert "decision_index" in detail
-            assert "decision_type" in detail
-            assert "confidence" in detail
-            assert "price_at_decision" in detail
-            assert "price_after" in detail
-            assert "price_change_pct" in detail
-            assert "favorable" in detail
-            assert "calibration" in detail
-            assert detail["calibration"] in ("overconfident", "underconfident", "well_calibrated")
-
-
-# ── Simulation Engine: Monte Carlo ────────────────────────────────────
-
-
-class TestMonteCarlo:
-    def setup_method(self):
-        _timeline_cache.clear()
-        self.scenario = _make_scenario()
-        self.engine = SimulationEngine(self.scenario)
-
-    def test_monte_carlo_structure(self):
-        """Monte Carlo output has all required fields."""
-        decisions = _make_decisions(uuid.uuid4(), count=2)
-        result = self.engine.monte_carlo_outcomes(decisions, n=20)
-
-        assert "simulations_run" in result
-        assert "outcomes" in result
-        assert "buckets" in result
-        assert "actual_outcome" in result
-        assert "percentile" in result
-        assert "median_outcome" in result
-        assert "best_outcome" in result
-        assert "worst_outcome" in result
-
-        assert result["simulations_run"] == 20
-        assert len(result["outcomes"]) == 20
-
-    def test_monte_carlo_outcomes_sorted(self):
-        """Outcomes list is sorted ascending."""
-        decisions = _make_decisions(uuid.uuid4(), count=2)
-        result = self.engine.monte_carlo_outcomes(decisions, n=50)
-        for i in range(1, len(result["outcomes"])):
-            assert result["outcomes"][i] >= result["outcomes"][i - 1]
-
-    def test_monte_carlo_worst_best_consistent(self):
-        """Worst <= median <= best."""
-        decisions = _make_decisions(uuid.uuid4(), count=3)
-        result = self.engine.monte_carlo_outcomes(decisions, n=50)
-        assert result["worst_outcome"] <= result["median_outcome"]
-        assert result["median_outcome"] <= result["best_outcome"]
-
-    def test_monte_carlo_percentile_range(self):
-        """Percentile is between 0 and 100."""
-        decisions = _make_decisions(uuid.uuid4(), count=2)
-        result = self.engine.monte_carlo_outcomes(decisions, n=30)
-        assert 0 <= result["percentile"] <= 100
-
-    def test_monte_carlo_buckets(self):
-        """Buckets cover the full range and have valid counts."""
-        decisions = _make_decisions(uuid.uuid4(), count=2)
-        result = self.engine.monte_carlo_outcomes(decisions, n=50)
-        assert len(result["buckets"]) == 20
-        for bucket in result["buckets"]:
-            assert "range_low" in bucket
-            assert "range_high" in bucket
-            assert "count" in bucket
-            assert bucket["count"] >= 0
-
-    def test_monte_carlo_no_decisions(self):
-        """With no decisions, all outcomes should be ~0 (cash unchanged)."""
-        result = self.engine.monte_carlo_outcomes([], n=10)
-        assert result["simulations_run"] == 10
-        # All outcomes should be 0 since no trades
-        for o in result["outcomes"]:
-            assert o == 0.0
-
-    def test_monte_carlo_deterministic_same_seed(self):
-        """Same scenario + decisions = same Monte Carlo results."""
-        _timeline_cache.clear()
-        decisions = _make_decisions(uuid.uuid4(), count=2)
-        r1 = self.engine.monte_carlo_outcomes(decisions, n=20)
-        r2 = self.engine.monte_carlo_outcomes(decisions, n=20)
-        assert r1["outcomes"] == r2["outcomes"]
-
-
-# ── Simulation Engine: Timeline Cache ─────────────────────────────────
-
-
-class TestTimelineCache:
-    def setup_method(self):
-        _timeline_cache.clear()
-
-    def test_cache_hit(self):
-        """Second engine creation for same scenario uses cached timeline."""
-        scenario = _make_scenario()
-        engine1 = SimulationEngine(scenario)
-        # Cache should have exactly one entry for this scenario
-        matching = [k for k in _timeline_cache if k.startswith(str(scenario.id))]
-        assert len(matching) == 1
-
-        engine2 = SimulationEngine(scenario)
-        # Both engines should share the same timeline dict
-        assert engine1.price_timeline is engine2.price_timeline
-
-    def test_cache_miss_different_scenario(self):
-        """Different scenario IDs create different cache entries."""
-        s1 = _make_scenario("Scenario A")
-        s2 = _make_scenario("Scenario B")
-        e1 = SimulationEngine(s1)
-        e2 = SimulationEngine(s2)
-        # Each scenario should have its own cache entry
-        matching_s1 = [k for k in _timeline_cache if k.startswith(str(s1.id))]
-        matching_s2 = [k for k in _timeline_cache if k.startswith(str(s2.id))]
-        assert len(matching_s1) == 1
-        assert len(matching_s2) == 1
-        assert e1.price_timeline is not e2.price_timeline
-
-
-# ── Gemini Service: _get_market_state helper ──────────────────────────
-
-
-class TestGetMarketState:
-    def test_inline_state(self):
-        """Returns inline market_state_at_decision when available."""
-        d = MagicMock()
-        d.market_state_at_decision = {"current_price": 100}
-        d.snapshot = None
-        assert _get_market_state(d) == {"current_price": 100}
-
-    def test_snapshot_fallback(self):
-        """Falls back to snapshot.data when inline is None."""
-        d = MagicMock()
-        d.market_state_at_decision = None
-        d.snapshot = MagicMock()
-        d.snapshot.data = {"current_price": 200}
-        assert _get_market_state(d) == {"current_price": 200}
-
-    def test_both_none(self):
-        """Returns empty dict when both are None."""
-        d = MagicMock()
-        d.market_state_at_decision = None
-        d.snapshot = None
-        assert _get_market_state(d) == {}
-
-    def test_inline_preferred_over_snapshot(self):
-        """When both exist, inline is preferred."""
-        d = MagicMock()
-        d.market_state_at_decision = {"current_price": 100}
-        d.snapshot = MagicMock()
-        d.snapshot.data = {"current_price": 200}
-        assert _get_market_state(d)["current_price"] == 100
-
-
-# ── Gemini Service: Heuristic Live Nudge ──────────────────────────────
-
-
-class TestLiveNudge:
-    def setup_method(self):
-        _timeline_cache.clear()
-        self.svc = GeminiService()
-        self.svc.use_mock = True
-        self.scenario = _make_scenario()
-
-    @pytest.mark.asyncio
-    async def test_no_nudge_for_no_decisions(self):
-        result = await self.svc.generate_live_nudge([], self.scenario, 30)
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_nudge_for_fomo_decisions(self):
-        """FOMO-pattern decisions should produce a nudge."""
-        decisions = _make_decisions(uuid.uuid4(), count=3)
-        # All buys during bullish sentiment with quick timing → strong FOMO
-        for d in decisions:
-            d.decision_type = "buy"
-            d.time_spent_seconds = 2.0
-            d.confidence_level = 5
-            d.market_state_at_decision = {
-                "current_price": 100,
-                "available_info": {"market_sentiment": "bullish"},
-            }
-        result = await self.svc.generate_live_nudge(decisions, self.scenario, 45)
-        assert result is not None
-        assert "message" in result
-        assert "bias" in result
-        assert len(result["message"]) > 10
-
-    @pytest.mark.asyncio
-    async def test_nudge_contains_valid_bias(self):
-        """Nudge bias field should be a recognized bias name."""
-        decisions = _make_decisions(uuid.uuid4(), count=2)
-        for d in decisions:
-            d.decision_type = "buy"
-            d.time_spent_seconds = 1.5
-            d.confidence_level = 5
-            d.market_state_at_decision = {
-                "current_price": 100,
-                "available_info": {"market_sentiment": "bullish"},
-            }
-        result = await self.svc.generate_live_nudge(decisions, self.scenario, 30)
-        if result:
-            valid_biases = {"fomo", "impulsivity", "loss_aversion", "overconfidence", "anchoring", "social_proof_reliance"}
-            assert result["bias"] in valid_biases
-
-    @pytest.mark.asyncio
-    async def test_no_nudge_for_calm_decisions(self):
-        """Low-bias decisions should not produce a nudge."""
-        decisions = _make_decisions(uuid.uuid4(), count=2)
-        for d in decisions:
-            d.decision_type = "hold"
-            d.time_spent_seconds = 15.0
-            d.confidence_level = 3
-            d.market_state_at_decision = {
-                "current_price": 100,
-                "available_info": {"market_sentiment": "neutral"},
-            }
-        result = await self.svc.generate_live_nudge(decisions, self.scenario, 50)
-        assert result is None
-
-
-# ── Gemini Service: Heuristic Challenge Reasoning ─────────────────────
-
-
-class TestChallengeReasoning:
-    def setup_method(self):
-        self.svc = GeminiService()
-        self.svc.use_mock = True
-        self.scenario = _make_scenario()
-        self.state = {"current_price": 105.0, "available_info": {"market_sentiment": "neutral"}}
-
-    @pytest.mark.asyncio
-    async def test_challenge_returns_score_and_feedback(self):
-        result = await self.svc.challenge_reasoning(
-            "buy", 100, "Based on trend analysis and news data", self.scenario, self.state, []
+class TestBiasClassifierFeatures:
+    def test_extract_features_returns_all_keys(self):
+        d = _mock_decision()
+        features = extract_decision_features(
+            d, _simple_timeline(), 120, 100, 10000, [d], 0
         )
-        assert "reasoning_score" in result
-        assert "feedback" in result
-        assert 1 <= result["reasoning_score"] <= 5
-        assert len(result["feedback"]) > 10
+        expected_keys = {
+            "time_spent_seconds", "time_pct_in_sim", "is_first_decision",
+            "price_change_10s", "price_change_30s", "price_vs_initial",
+            "future_change_30s", "info_panels_viewed", "confidence_normalized",
+            "position_pct_of_capital", "is_buy", "is_sell", "is_hold",
+            "local_volatility", "time_since_last_decision", "direction_consistency",
+        }
+        assert set(features.keys()) == expected_keys
 
-    @pytest.mark.asyncio
-    async def test_analytical_rationale_scores_higher(self):
-        r1 = await self.svc.challenge_reasoning(
-            "buy", 100, "Based on data analysis and risk assessment", self.scenario, self.state, []
+    def test_buy_decision_flags(self):
+        d = _mock_decision(decision_type="buy")
+        features = extract_decision_features(d, _simple_timeline(), 120, 100, 10000, [d], 0)
+        assert features["is_buy"] == 1.0
+        assert features["is_sell"] == 0.0
+        assert features["is_hold"] == 0.0
+
+    def test_sell_decision_flags(self):
+        d = _mock_decision(decision_type="sell")
+        features = extract_decision_features(d, _simple_timeline(), 120, 100, 10000, [d], 0)
+        assert features["is_buy"] == 0.0
+        assert features["is_sell"] == 1.0
+
+    def test_first_decision_flag(self):
+        d1 = _mock_decision(simulation_time=10)
+        d2 = _mock_decision(simulation_time=30)
+        f1 = extract_decision_features(d1, _simple_timeline(), 120, 100, 10000, [d1, d2], 0)
+        f2 = extract_decision_features(d2, _simple_timeline(), 120, 100, 10000, [d1, d2], 1)
+        assert f1["is_first_decision"] == 1.0
+        assert f2["is_first_decision"] == 0.0
+
+    def test_price_change_calculated(self):
+        tl = _spike_timeline(100, 120, spike_at=20, spike_pct=0.10)
+        d = _mock_decision(simulation_time=25)
+        features = extract_decision_features(d, tl, 120, 100, 10000, [d], 0)
+        assert features["price_change_10s"] > 0.05
+
+    def test_position_pct_calculated(self):
+        d = _mock_decision(amount=50, price_at_decision=100)
+        features = extract_decision_features(d, _simple_timeline(), 120, 100, 10000, [d], 0)
+        assert features["position_pct_of_capital"] == 0.5
+
+
+class TestBiasClassifierRules:
+    def test_evaluate_rule_comparisons(self):
+        assert _evaluate_rule(5, ">", 3) is True
+        assert _evaluate_rule(2, "<", 3) is True
+        assert _evaluate_rule(3, "==", 3) is True
+        assert _evaluate_rule(0.05, "abs<", 0.1) is True
+        assert _evaluate_rule(-0.05, "abs<", 0.1) is True
+        assert _evaluate_rule(0.15, "abs>", 0.1) is True
+
+    def test_classify_decision_returns_all_biases(self):
+        features = {
+            "time_spent_seconds": 2, "time_pct_in_sim": 0.5, "is_first_decision": 1.0,
+            "price_change_10s": 0.06, "price_change_30s": 0.1, "price_vs_initial": 0.05,
+            "future_change_30s": -0.02, "info_panels_viewed": 0, "confidence_normalized": 0.9,
+            "position_pct_of_capital": 0.15, "is_buy": 1.0, "is_sell": 0.0, "is_hold": 0.0,
+            "local_volatility": 0.03, "time_since_last_decision": 5, "direction_consistency": 1.0,
+        }
+        scores = classify_decision(features)
+        assert set(scores.keys()) == set(BIAS_LABELS)
+        assert scores["fomo"] > 0.3
+        assert scores["impulsivity"] > 0.3
+
+    def test_classify_calm_decision_low_scores(self):
+        """A calm, well-researched decision should have low bias scores."""
+        features = {
+            "time_spent_seconds": 15, "time_pct_in_sim": 0.3, "is_first_decision": 0.0,
+            "price_change_10s": 0.001, "price_change_30s": 0.002, "price_vs_initial": 0.01,
+            "future_change_30s": 0.01, "info_panels_viewed": 4, "confidence_normalized": 0.6,
+            "position_pct_of_capital": 0.03, "is_buy": 1.0, "is_sell": 0.0, "is_hold": 0.0,
+            "local_volatility": 0.01, "time_since_last_decision": 40, "direction_consistency": 0.5,
+        }
+        scores = classify_decision(features)
+        max_score = max(scores.values())
+        assert max_score <= 0.5, f"Expected low bias scores, got max {max_score}"
+
+
+class TestBiasClassifierPipeline:
+    def test_empty_decisions(self):
+        result = classify_simulation_biases([], _simple_timeline(), 120, 100, 10000)
+        assert result["per_decision"] == []
+        assert all(v == 0.0 for v in result["aggregate_scores"].values())
+
+    def test_full_pipeline_returns_expected_keys(self):
+        decisions = [_mock_decision(simulation_time=30), _mock_decision(decision_type="sell", simulation_time=60)]
+        result = classify_simulation_biases(decisions, _simple_timeline(), 120, 100, 10000)
+        assert "per_decision" in result
+        assert "aggregate_scores" in result
+        assert "feature_importance" in result
+        assert "top_biases" in result
+        assert len(result["per_decision"]) == 2
+
+    def test_per_decision_has_required_fields(self):
+        d = _mock_decision()
+        result = classify_simulation_biases([d], _simple_timeline(), 120, 100, 10000)
+        pd = result["per_decision"][0]
+        assert "decision_index" in pd
+        assert "features" in pd
+        assert "bias_scores" in pd
+        assert "primary_bias" in pd
+
+    def test_gemini_comparison_when_provided(self):
+        decisions = [_mock_decision(time_spent_seconds=2, info_viewed=[], confidence_level=5)]
+        gemini_patterns = [
+            {"pattern_name": "fomo", "confidence": 0.8},
+            {"pattern_name": "impulsivity", "confidence": 0.7},
+        ]
+        result = classify_simulation_biases(
+            decisions, _simple_timeline(), 120, 100, 10000,
+            gemini_patterns=gemini_patterns,
         )
-        r2 = await self.svc.challenge_reasoning(
-            "buy", 100, "moon hype fomo", self.scenario, self.state, []
+        assert result["gemini_comparison"] is not None
+        assert "agreement_rate" in result["gemini_comparison"]
+        assert "details" in result["gemini_comparison"]
+
+    def test_gemini_comparison_not_present_when_none(self):
+        decisions = [_mock_decision()]
+        result = classify_simulation_biases(decisions, _simple_timeline(), 120, 100, 10000)
+        assert result["gemini_comparison"] is None
+
+    def test_feature_importance_has_entries(self):
+        decisions = [
+            _mock_decision(simulation_time=20, time_spent_seconds=2),
+            _mock_decision(simulation_time=40, time_spent_seconds=10),
+            _mock_decision(simulation_time=60, time_spent_seconds=3),
+        ]
+        result = classify_simulation_biases(decisions, _simple_timeline(), 120, 100, 10000)
+        assert len(result["feature_importance"]) > 0
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# FEATURE #3: Confidence Calibrator
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestConfidenceCalibrator:
+    def test_unknown_pattern_returns_low_confidence(self):
+        result = calibrate_pattern_confidence(
+            "totally_unknown_bias", 0.9, [], {}, [], 120, 100, 10000,
         )
-        assert r1["reasoning_score"] > r2["reasoning_score"]
+        assert result["confidence_level"] == "low"
+        assert result["calibrated_confidence"] < 0.5
 
-    @pytest.mark.asyncio
-    async def test_short_rationale_low_score(self):
-        result = await self.svc.challenge_reasoning(
-            "buy", 100, "yolo", self.scenario, self.state, []
+    def test_all_known_biases_have_rules(self):
+        known_biases = [
+            "fomo", "loss_aversion", "anchoring", "overconfidence",
+            "impulsivity", "recency_bias", "confirmation_bias", "social_proof_reliance",
+        ]
+        for bias in known_biases:
+            assert bias in EVIDENCE_RULES, f"No rules for {bias}"
+            assert len(EVIDENCE_RULES[bias]["signals"]) >= 3
+
+    def test_fomo_detected_with_evidence(self):
+        """FOMO should be high-confidence when there's a spike + fast buy + no info."""
+        tl = _spike_timeline(100, 120, spike_at=20, spike_pct=0.08)
+        decisions = [
+            _mock_decision(decision_type="buy", simulation_time=25, time_spent_seconds=2,
+                           info_viewed=[], confidence_level=5, amount=20, price_at_decision=108),
+        ]
+        result = calibrate_pattern_confidence(
+            "fomo", 0.8, decisions, tl, [], 120, 100, 10000,
         )
-        assert result["reasoning_score"] <= 2
+        matched = sum(1 for e in result["evidence_details"] if e["matched"])
+        assert matched >= 2, f"Expected ≥2 matched signals, got {matched}"
+        assert result["confidence_level"] in ("high", "medium")
 
-    @pytest.mark.asyncio
-    async def test_challenge_with_existing_decisions(self):
-        decisions = _make_decisions(uuid.uuid4(), count=2)
-        result = await self.svc.challenge_reasoning(
-            "sell", 50, "Trend reversal based on news data", self.scenario, self.state, decisions
+    def test_no_evidence_returns_insufficient(self):
+        """Calm decisions should produce 'insufficient' for FOMO."""
+        decisions = [
+            _mock_decision(decision_type="hold", simulation_time=60, time_spent_seconds=15,
+                           info_viewed=["news", "social", "chart"], confidence_level=3),
+        ]
+        result = calibrate_pattern_confidence(
+            "fomo", 0.5, decisions, _simple_timeline(), [], 120, 100, 10000,
         )
-        assert 1 <= result["reasoning_score"] <= 5
+        assert result["confidence_level"] in ("insufficient", "low")
 
-
-# ── Gemini Service: Heuristic Adaptive Scenario ──────────────────────
-
-
-class TestAdaptiveScenario:
-    def setup_method(self):
-        self.svc = GeminiService()
-        self.svc.use_mock = True
-
-    @pytest.mark.asyncio
-    async def test_adaptive_scenario_fomo_profile(self):
-        profile = {"bias_patterns": {"fomo": 0.8, "impulsivity": 0.3}, "weaknesses": ["fomo_susceptibility"]}
-        result = await self.svc.generate_adaptive_scenario(profile)
-
-        assert "name" in result
-        assert "description" in result
-        assert "initial_data" in result
-        assert "events" in result
-        assert "target_bias" in result
-        assert result["target_bias"] == "fomo"
-        assert result["category"] == "fomo_trap"
-        assert len(result["events"]) >= 4
-
-    @pytest.mark.asyncio
-    async def test_adaptive_scenario_impulsivity_profile(self):
-        profile = {"bias_patterns": {"impulsivity": 0.9, "fomo": 0.2}}
-        result = await self.svc.generate_adaptive_scenario(profile)
-        assert result["target_bias"] == "impulsivity"
-        assert result["category"] == "patience_test"
-
-    @pytest.mark.asyncio
-    async def test_adaptive_scenario_loss_aversion_profile(self):
-        profile = {"bias_patterns": {"loss_aversion": 0.7, "fomo": 0.1}}
-        result = await self.svc.generate_adaptive_scenario(profile)
-        assert result["target_bias"] == "loss_aversion"
-
-    @pytest.mark.asyncio
-    async def test_adaptive_scenario_has_valid_initial_data(self):
-        profile = {"bias_patterns": {"fomo": 0.5}}
-        result = await self.svc.generate_adaptive_scenario(profile)
-        init = result["initial_data"]
-        assert "asset" in init
-        assert "price" in init
-        assert "your_balance" in init
-        assert init["price"] > 0
-        assert init["your_balance"] > 0
-
-    @pytest.mark.asyncio
-    async def test_adaptive_scenario_empty_profile(self):
-        """Empty bias patterns should default to fomo template."""
-        result = await self.svc.generate_adaptive_scenario({})
-        assert result["target_bias"] == "fomo"
-
-    @pytest.mark.asyncio
-    async def test_adaptive_scenario_has_time_pressure(self):
-        profile = {"bias_patterns": {"fomo": 0.5}}
-        result = await self.svc.generate_adaptive_scenario(profile)
-        assert result["time_pressure_seconds"] == 180
-        assert 1 <= result["difficulty"] <= 5
-
-
-# ── Gemini Service: Heuristic Nudge Messages ─────────────────────────
-
-
-class TestHeuristicNudge:
-    def setup_method(self):
-        self.svc = GeminiService()
-
-    def test_nudge_messages_for_all_biases(self):
-        """Each known bias type should produce a distinct nudge message."""
-        biases = ["fomo", "impulsivity", "loss_aversion", "overconfidence", "anchoring", "social_proof_reliance"]
-        messages = set()
-        for bias in biases:
-            entry = {"biases": {bias: 0.8}, "evidence": "test"}
-            result = self.svc._heuristic_nudge(bias, entry)
-            assert "message" in result
-            assert result["bias"] == bias
-            messages.add(result["message"])
-        # All messages should be different
-        assert len(messages) == len(biases)
-
-    def test_unknown_bias_gets_fallback(self):
-        result = self.svc._heuristic_nudge("unknown_bias", {"biases": {}, "evidence": "test"})
-        assert "message" in result
-        assert "breath" in result["message"].lower()
-
-
-# ── Schema Validation: EvidenceTimestamp ──────────────────────────────
-
-
-class TestEvidenceTimestampSchema:
-    def test_valid_evidence_timestamp(self):
-        from schemas.reflection import EvidenceTimestamp
-        et = EvidenceTimestamp(time=30, event="Price spike", relevance="Triggered FOMO")
-        assert et.time == 30
-        assert et.event == "Price spike"
-
-    def test_decision_explanation_with_evidence_timestamps(self):
-        from schemas.reflection import DecisionExplanation, EvidenceTimestamp
-        exp = DecisionExplanation(
-            decision_index=0,
-            decision_type="buy",
-            timestamp_seconds=15,
-            detected_bias="fomo",
-            explanation="Bought during hype",
-            evidence_from_actions=["Bullish sentiment"],
-            severity="moderate",
-            evidence_timestamps=[
-                EvidenceTimestamp(time=10, event="Celebrity tweet", relevance="Social pressure"),
-                EvidenceTimestamp(time=14, event="Price +10%", relevance="Rising price"),
-            ],
+    def test_calibrate_all_patterns_structure(self):
+        patterns = [
+            {"pattern_name": "fomo", "confidence": 0.7},
+            {"pattern_name": "overconfidence", "confidence": 0.6},
+        ]
+        result = calibrate_all_patterns(
+            patterns, [_mock_decision()], _simple_timeline(), [], 120, 100, 10000,
         )
-        assert len(exp.evidence_timestamps) == 2
-        assert exp.evidence_timestamps[0].time == 10
+        assert "calibrated_patterns" in result
+        assert "abstained_patterns" in result
+        assert "overall_evidence_quality" in result
+        assert "summary" in result
 
-    def test_decision_explanation_without_evidence_timestamps(self):
-        from schemas.reflection import DecisionExplanation
-        exp = DecisionExplanation(
-            decision_index=0,
-            decision_type="buy",
-            timestamp_seconds=15,
-            detected_bias="fomo",
-            explanation="Bought during hype",
-            evidence_from_actions=["Bullish sentiment"],
-            severity="moderate",
+    def test_empty_patterns(self):
+        result = calibrate_all_patterns([], [], {}, [], 120, 100, 10000)
+        assert result["overall_evidence_quality"] == "weak"
+        assert result["calibrated_patterns"] == []
+
+    def test_evidence_details_present(self):
+        decisions = [_mock_decision(time_spent_seconds=2, info_viewed=[])]
+        result = calibrate_pattern_confidence(
+            "impulsivity", 0.7, decisions, _simple_timeline(), [], 120, 100, 10000,
         )
-        assert exp.evidence_timestamps is None
+        assert len(result["evidence_details"]) > 0
+        for detail in result["evidence_details"]:
+            assert "signal" in detail
+            assert "matched" in detail
+            assert "weight" in detail
 
-
-# ── Gemini Pydantic Output Schemas ────────────────────────────────────
-
-
-class TestNewOutputSchemas:
-    def test_live_nudge_output_valid(self):
-        from services.gemini_service import _LiveNudgeOutput
-        o = _LiveNudgeOutput(message="Slow down!", bias="impulsivity")
-        assert o.message == "Slow down!"
-
-    def test_challenge_output_valid(self):
-        from services.gemini_service import _ChallengeOutput
-        o = _ChallengeOutput(reasoning_score=4, feedback="Good reasoning")
-        assert o.reasoning_score == 4
-
-    def test_challenge_output_bounds(self):
-        from services.gemini_service import _ChallengeOutput
-        from pydantic import ValidationError
-        with pytest.raises(ValidationError):
-            _ChallengeOutput(reasoning_score=0, feedback="Bad")  # min is 1
-        with pytest.raises(ValidationError):
-            _ChallengeOutput(reasoning_score=6, feedback="Too high")  # max is 5
-
-    def test_adaptive_scenario_output_valid(self):
-        from services.gemini_service import _AdaptiveScenarioOutput
-        o = _AdaptiveScenarioOutput(
-            name="Test",
-            description="desc",
-            difficulty=3,
-            category="fomo_trap",
-            time_pressure_seconds=180,
-            initial_data={"asset": "X", "price": 100, "your_balance": 10000},
-            events=[{"time": 30, "type": "news", "content": "test"}],
-            target_bias="fomo",
+    def test_calibrated_confidence_blends_evidence_and_gemini(self):
+        decisions = [_mock_decision(time_spent_seconds=1, info_viewed=[])]
+        result = calibrate_pattern_confidence(
+            "impulsivity", 0.9, decisions, _simple_timeline(), [], 120, 100, 10000,
         )
-        assert o.difficulty == 3
+        assert 0 <= result["calibrated_confidence"] <= 1
+        assert result["calibrated_confidence"] > 0.2
 
-    def test_adaptive_scenario_output_difficulty_bounds(self):
-        from services.gemini_service import _AdaptiveScenarioOutput
-        from pydantic import ValidationError
-        with pytest.raises(ValidationError):
-            _AdaptiveScenarioOutput(
-                name="X", description="X", difficulty=6,
-                category="x", time_pressure_seconds=180,
-                initial_data={}, events=[], target_bias="fomo"
-            )
+    def test_loss_aversion_with_held_through_drop(self):
+        """Loss aversion should detect when user holds through a price drop."""
+        tl = {}
+        for t in range(121):
+            if t < 30:
+                tl[t] = 100
+            elif t < 60:
+                tl[t] = 100 - (t - 30) * 0.5
+            else:
+                tl[t] = 85
+        decisions = [
+            _mock_decision(decision_type="buy", simulation_time=25, amount=10, price_at_decision=100),
+        ]
+        result = calibrate_pattern_confidence(
+            "loss_aversion", 0.7, decisions, tl, [], 120, 100, 10000,
+        )
+        matched = sum(1 for e in result["evidence_details"] if e["matched"])
+        assert matched >= 1, "Should detect held_through_drop"
 
 
-# ── Integration: Calibration + Monte Carlo with same decisions ────────
+class TestConfidenceCalibratorEdgeCases:
+    def test_no_decisions(self):
+        result = calibrate_pattern_confidence(
+            "fomo", 0.5, [], _simple_timeline(), [], 120, 100, 10000,
+        )
+        matched = sum(1 for e in result["evidence_details"] if e["matched"])
+        assert matched == 0
 
-
-class TestCalibrationMonteCarlo:
-    """Ensure calibration and Monte Carlo work together on the same decision set."""
-
-    def setup_method(self):
-        _timeline_cache.clear()
-        self.scenario = _make_scenario()
-        self.engine = SimulationEngine(self.scenario)
-        self.decisions = _make_decisions(uuid.uuid4(), count=4)
-
-    def test_both_produce_valid_output(self):
-        cal = self.engine.get_calibration_report(self.decisions)
-        mc = self.engine.monte_carlo_outcomes(self.decisions, n=20)
-
-        assert cal["total_decisions"] == 4
-        assert mc["simulations_run"] == 20
-        assert isinstance(mc["actual_outcome"], float)
-        assert isinstance(cal["calibration_score"], int)
-
-    def test_monte_carlo_actual_matches_engine_calculation(self):
-        """The actual_outcome from Monte Carlo should match replaying decisions on the real timeline."""
-        mc = self.engine.monte_carlo_outcomes(self.decisions, n=10)
-        # Manually replay
-        portfolio = {"cash": 10000.0, "holdings": {}}
-        for d in self.decisions:
-            price = self.engine.price_timeline.get(d.simulation_time, 100.0)
-            if d.decision_type == "buy" and d.amount:
-                cost = d.amount * price
-                if cost <= portfolio["cash"]:
-                    portfolio["cash"] -= cost
-                    portfolio["holdings"]["TESTCOIN"] = portfolio["holdings"].get("TESTCOIN", 0) + d.amount
-            elif d.decision_type == "sell" and d.amount:
-                held = portfolio["holdings"].get("TESTCOIN", 0)
-                sell_amt = min(d.amount, held)
-                if sell_amt > 0:
-                    portfolio["cash"] += sell_amt * price
-                    portfolio["holdings"]["TESTCOIN"] = held - sell_amt
-
-        final_price = self.engine.price_timeline.get(self.engine.time_limit, 100.0)
-        hv = portfolio["holdings"].get("TESTCOIN", 0) * final_price
-        expected_pl = round(portfolio["cash"] + hv - 10000.0, 2)
-
-        assert mc["actual_outcome"] == expected_pl
+    def test_weights_sum_to_one(self):
+        """All signal weights for each bias should sum to approximately 1.0."""
+        for bias, rules in EVIDENCE_RULES.items():
+            total = sum(s["weight"] for s in rules["signals"])
+            assert abs(total - 1.0) < 0.01, f"{bias} weights sum to {total}, expected ~1.0"

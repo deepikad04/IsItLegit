@@ -1,6 +1,7 @@
 """
-Seed script: creates two demo users with rich, varied simulation history,
-decisions, behavior profiles, and learning progress — ready for hackathon demo.
+Seed script: creates two demo users with raw behavioral data — decisions,
+outcomes, snapshots, and metadata. NO pre-computed analysis, patterns, or
+counterfactuals; those are generated on-demand by Gemini.
 
 Usage:
     cd backend && python seed_demo.py
@@ -241,161 +242,6 @@ ALEX_SIMS = [
 ]
 
 
-SCENARIO_BIASES = {
-    0: "fomo",           # HYPECOIN
-    1: "impatience",     # TECHGROW
-    2: "loss_aversion",  # SAFECO
-    3: "social_proof_reliance",  # SECRETCO
-    4: "overconfidence",  # MEGACORP
-    5: "anchoring",      # FAILCO
-}
-
-BIAS_DESCRIPTIONS = {
-    "fomo": "Fear of missing out drove premature entries during price rallies",
-    "impatience": "Exited positions too early, missing larger trend moves",
-    "loss_aversion": "Panic selling during drawdowns rather than following the analysis",
-    "social_proof_reliance": "Followed crowd sentiment instead of independent analysis",
-    "overconfidence": "Excessive position sizing based on high conviction without proportional evidence",
-    "anchoring": "Over-weighted initial price point when making exit decisions",
-}
-
-TAKEAWAYS_BY_OUTCOME = {
-    ("profit", "high"): "Excellent execution. Your process matched the outcome — this is sustainable trading.",
-    ("profit", "low"): "You profited, but your process was weak. This outcome relied heavily on luck and may not repeat.",
-    ("loss", "high"): "Good process, bad outcome. Markets are probabilistic — keep making quality decisions and results will follow.",
-    ("loss", "low"): "Both process and outcome suffered. Focus on slowing down and analyzing before acting.",
-    ("break_even", "high"): "Solid discipline to avoid losses. Your process kept you safe — a sign of growing maturity.",
-    ("break_even", "low"): "Breaking even masked some process issues. Review your entry timing and information usage.",
-}
-
-
-def _build_analysis(sim_id, sc_idx, pnl, process_score, decisions_spec, initial_value):
-    """Generate pre-seeded gemini_analysis and counterfactuals for a simulation."""
-    outcome_type = "profit" if pnl > 100 else ("loss" if pnl < -100 else "break_even")
-    outcome_summary = f"+${pnl:.2f}" if pnl >= 0 else f"-${abs(pnl):.2f}"
-    quality_level = "high" if process_score >= 60 else "low"
-    bias = SCENARIO_BIASES.get(sc_idx, "fomo")
-
-    # Determine luck vs skill
-    if outcome_type == "profit" and process_score >= 60:
-        luck, skill = 0.3, 0.7
-        luck_explanation = "Your gains were primarily driven by sound decision-making. You entered at good levels and managed risk well."
-    elif outcome_type == "profit" and process_score < 60:
-        luck, skill = 0.7, 0.3
-        luck_explanation = "Market conditions favored you, but your process had gaps. Similar decisions in different conditions could easily result in losses."
-    elif outcome_type == "loss" and process_score >= 60:
-        luck, skill = 0.65, 0.35
-        luck_explanation = "Your process was reasonable but the market moved against you. This kind of loss is a normal part of trading — your approach was sound."
-    else:
-        luck, skill = 0.4, 0.6
-        luck_explanation = "Both poor timing and impulsive decision-making contributed to this loss. Improving your process would reduce these outcomes."
-
-    # Build patterns detected
-    confidence_val = 0.8 if process_score < 40 else (0.55 if process_score < 65 else 0.3)
-    patterns = [{
-        "pattern_name": bias,
-        "confidence": round(confidence_val, 2),
-        "description": BIAS_DESCRIPTIONS.get(bias, "Behavioral pattern detected in decision sequence"),
-        "evidence": [d["rationale"] for d in decisions_spec[:3]],
-    }]
-    # Add a secondary pattern for low process scores
-    if process_score < 50:
-        patterns.append({
-            "pattern_name": "impulsivity",
-            "confidence": 0.6,
-            "description": "Rapid decision-making without adequate information gathering",
-            "evidence": [f"First decision at t={decisions_spec[0]['t']}s with confidence {decisions_spec[0]['conf']}/5"],
-        })
-
-    # Process quality factors
-    first_action_time = decisions_spec[0]["t"]
-    avg_conf = sum(d["conf"] for d in decisions_spec) / len(decisions_spec)
-    factors = {
-        "timing": round(min(first_action_time / 30, 1.0), 2),
-        "information_usage": round(process_score / 100 * 0.9 + 0.1, 2),
-        "risk_sizing": round(0.8 if all((d.get("amt") or 0) < initial_value * 0.5 for d in decisions_spec) else 0.35, 2),
-        "emotional_indicators": round(1.0 - (confidence_val * 0.8), 2),
-    }
-    pq_summary = (
-        "Strong analytical approach with measured risk-taking"
-        if process_score >= 70 else
-        "Developing skills with room for improvement in timing and sizing"
-        if process_score >= 50 else
-        "Emotional reactions dominated over systematic analysis"
-    )
-
-    # Insights
-    insights = [
-        {
-            "title": "Timing Awareness",
-            "description": f"Your first action came at t={first_action_time}s. "
-                           + ("Good patience — waiting for information." if first_action_time >= 20 else "Consider waiting longer before acting."),
-            "related_pattern": bias,
-        },
-        {
-            "title": "Confidence Calibration",
-            "description": f"Average confidence was {avg_conf:.1f}/5. "
-                           + ("Well-calibrated to outcomes." if abs(avg_conf - 3) < 1.5 else "May need recalibration relative to your actual hit rate."),
-        },
-    ]
-
-    key = (outcome_type, quality_level)
-    takeaway = TAKEAWAYS_BY_OUTCOME.get(key, "Keep practicing to refine your decision-making process.")
-
-    coaching = (
-        "You're showing real growth. Keep focusing on process over outcomes — the results will follow."
-        if process_score >= 65 else
-        "Focus on slowing down your initial reactions. Set a personal rule: no trades in the first 15 seconds."
-        if process_score < 40 else
-        "You're making progress. Try writing a brief rationale before every trade to engage your analytical mind."
-    )
-
-    analysis = {
-        "simulation_id": str(sim_id),
-        "outcome_summary": outcome_summary,
-        "outcome_type": outcome_type,
-        "process_quality": {
-            "score": float(process_score),
-            "factors": factors,
-            "summary": pq_summary,
-        },
-        "patterns_detected": patterns,
-        "luck_factor": luck,
-        "skill_factor": skill,
-        "luck_skill_explanation": luck_explanation,
-        "counterfactuals": [],  # stored separately
-        "insights": insights,
-        "key_takeaway": takeaway,
-        "coaching_message": coaching,
-    }
-
-    # Counterfactuals
-    counterfactuals = [
-        {
-            "timeline_name": "Bull Run",
-            "description": "What if the market rallied 20% more than it did?",
-            "market_changes": "Extended bullish momentum with institutional inflows",
-            "outcome": {"profit_loss": round(pnl * 1.6 + 500, 2), "final_value": round(initial_value + pnl * 1.6 + 500, 2)},
-            "lesson": "In stronger markets, your exact decisions would have performed better — but don't let that create hindsight bias.",
-        },
-        {
-            "timeline_name": "Market Crash",
-            "description": "What if a flash crash hit mid-simulation?",
-            "market_changes": "Sudden 30% drawdown triggered by macro news",
-            "outcome": {"profit_loss": round(pnl * 0.4 - 800, 2), "final_value": round(initial_value + pnl * 0.4 - 800, 2)},
-            "lesson": "Position sizing and stop-losses matter most in crashes. Your " + ("conservative sizing helped limit damage." if process_score >= 60 else "large positions would have amplified the loss."),
-        },
-        {
-            "timeline_name": "Sideways Chop",
-            "description": "What if the market moved sideways with high volatility?",
-            "market_changes": "Price oscillated within a tight range with false breakouts",
-            "outcome": {"profit_loss": round(pnl * 0.2 - 100, 2), "final_value": round(initial_value + pnl * 0.2 - 100, 2)},
-            "lesson": "Patience is key in choppy markets. " + ("Your wait-and-see approach would have preserved capital." if process_score >= 55 else "Frequent trading in sideways markets eats into returns through slippage."),
-        },
-    ]
-
-    return analysis, counterfactuals
-
 
 def create_simulations(db, user, scenarios, sim_data_list):
     """Create simulations with decisions and snapshots."""
@@ -433,12 +279,7 @@ def create_simulations(db, user, scenarios, sim_data_list):
         db.add(sim)
         db.flush()
 
-        # Pre-seed reflection analysis so it works without live Gemini
-        analysis, cfs = _build_analysis(
-            str(sim.id), sc_idx, pnl, process_score, decisions_spec, initial_value
-        )
-        sim.gemini_analysis = analysis
-        sim.counterfactuals = [cf for cf in cfs]
+        # Analysis generated on-demand by Gemini (no pre-computed patterns)
 
         simulations.append(sim)
 
@@ -517,42 +358,13 @@ def seed():
     demo_profile = BehaviorProfile(
         user_id=demo_user.id,
         profile_data={
-            "strengths": ["patience", "risk_awareness", "analytical_thinking", "contrarian_mindset"],
-            "weaknesses": ["fomo_susceptibility", "loss_aversion"],
-            "bias_patterns": {
-                "fomo": 0.25,
-                "loss_aversion": 0.35,
-                "anchoring": 0.15,
-                "social_proof_reliance": 0.20,
-                "overconfidence": 0.20,
-                "impulsivity": 0.10,
-            },
-            "decision_style": "analytical",
-            "stress_response": "measured",
-            "avg_confidence_accuracy": 0.72,
-            "avg_time_to_first_action": 28,
-            "playbook": {
-                "dos": [
-                    "Wait at least 20 seconds before your first trade — analyze the setup",
-                    "Keep position sizes under 20% of capital on any single trade",
-                    "Buy after crashes, not before them — be contrarian on hype assets",
-                    "Take partial profits at +7-10% to lock in gains while letting winners run",
-                    "Check analyst reports and fundamentals before acting on social buzz",
-                ],
-                "donts": [
-                    "Don't buy within the first 10 seconds — that's FOMO talking",
-                    "Don't average down on hype assets without fundamentals",
-                    "Don't hold losing positions hoping for recovery — set mental stop-losses",
-                    "Don't let social media sentiment drive your entry timing",
-                    "Don't go all-in on any single position no matter how confident you feel",
-                ],
-                "key_rules": [
-                    "If your confidence is 5/5, reduce position size by 50% — overconfidence is your signal to be cautious",
-                    "Never act on 'insider tips' or unverified rumors — wait for official announcements",
-                    "The best trades feel uncomfortable at entry — if it feels easy, everyone else is already in",
-                ],
-                "generated_from": 19,
-            },
+            # Raw behavioral metadata only — Gemini analyzes this to discover patterns
+            "simulations_completed": len(DEMO_SIMS),
+            "avg_process_score": round(sum(s[3] for s in DEMO_SIMS) / len(DEMO_SIMS), 1),
+            "avg_time_to_first_action": round(sum(s[4][0]["t"] for s in DEMO_SIMS) / len(DEMO_SIMS), 1),
+            "avg_confidence": round(sum(d["conf"] for s in DEMO_SIMS for d in s[4]) / sum(len(s[4]) for s in DEMO_SIMS), 1),
+            "win_rate": round(sum(1 for s in DEMO_SIMS if s[2] > 0) / len(DEMO_SIMS), 2),
+            "scenarios_played": list(set(s[0] for s in DEMO_SIMS)),
         },
         improvement_trajectory=[
             {"date": (NOW - timedelta(days=30)).isoformat(), "overall_score": 25},
@@ -624,37 +436,13 @@ def seed():
     alex_profile = BehaviorProfile(
         user_id=alex_user.id,
         profile_data={
-            "strengths": ["learning_attitude"],
-            "weaknesses": ["fomo_susceptibility", "panic_selling", "social_proof_reliance", "overconfidence"],
-            "bias_patterns": {
-                "fomo": 0.70,
-                "loss_aversion": 0.75,
-                "anchoring": 0.40,
-                "social_proof_reliance": 0.65,
-                "overconfidence": 0.60,
-                "impulsivity": 0.55,
-            },
-            "decision_style": "impulsive",
-            "stress_response": "panicky",
-            "avg_confidence_accuracy": 0.35,
-            "avg_time_to_first_action": 11,
-            "playbook": {
-                "dos": [
-                    "Wait at least 15 seconds before making any trade",
-                    "Start with positions under 30% of your capital",
-                    "Write down WHY you're making each decision before clicking",
-                ],
-                "donts": [
-                    "Don't buy something just because social media is hyping it",
-                    "Don't sell in panic — take a breath, check the facts first",
-                    "Don't put more than 50% of capital into any single trade",
-                ],
-                "key_rules": [
-                    "If you feel excited about a trade, that's a warning sign — slow down",
-                    "Small losses are normal. Cutting early is better than holding and hoping",
-                ],
-                "generated_from": 12,
-            },
+            # Raw behavioral metadata only — Gemini analyzes this to discover patterns
+            "simulations_completed": len(ALEX_SIMS),
+            "avg_process_score": round(sum(s[3] for s in ALEX_SIMS) / len(ALEX_SIMS), 1),
+            "avg_time_to_first_action": round(sum(s[4][0]["t"] for s in ALEX_SIMS) / len(ALEX_SIMS), 1),
+            "avg_confidence": round(sum(d["conf"] for s in ALEX_SIMS for d in s[4]) / sum(len(s[4]) for s in ALEX_SIMS), 1),
+            "win_rate": round(sum(1 for s in ALEX_SIMS if s[2] > 0) / len(ALEX_SIMS), 2),
+            "scenarios_played": list(set(s[0] for s in ALEX_SIMS)),
         },
         improvement_trajectory=[
             {"date": (NOW - timedelta(days=10)).isoformat(), "overall_score": 28},

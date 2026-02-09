@@ -82,29 +82,30 @@ export default function ProReplayChart({ priceHistory, userDecisions, proDecisio
   addNearestDecision(proMap, 'proAction');
 
   return (
-    <div className="mt-4">
-      <ResponsiveContainer width="100%" height={240}>
+    <div className="mt-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
+      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Price Chart with Decision Points</p>
+      <ResponsiveContainer width="100%" height={280}>
         <LineChart data={data} margin={{ top: 20, right: 20, bottom: 5, left: 10 }}>
           <XAxis
             dataKey="time"
-            tick={{ fill: '#3A3E61', fontSize: 11 }}
+            tick={{ fill: '#6b7280', fontSize: 11, fontWeight: 500 }}
             tickFormatter={(t) => `${t}s`}
-            axisLine={{ stroke: '#A4B9D8' }}
+            axisLine={{ stroke: '#d1d5db' }}
           />
           <YAxis
-            tick={{ fill: '#3A3E61', fontSize: 11 }}
+            tick={{ fill: '#6b7280', fontSize: 11, fontWeight: 500 }}
             tickFormatter={(v) => `$${v.toFixed(0)}`}
-            axisLine={{ stroke: '#A4B9D8' }}
+            axisLine={{ stroke: '#d1d5db' }}
             domain={['auto', 'auto']}
           />
           <Tooltip content={<CustomTooltip />} />
           <Line
             type="monotone"
             dataKey="price"
-            stroke="#A4B9D8"
+            stroke="#9ca3af"
             strokeWidth={2}
             dot={false}
-            activeDot={{ r: 4, fill: '#3A3E61' }}
+            activeDot={{ r: 5, fill: '#3A3E61', stroke: 'white', strokeWidth: 2 }}
           />
           {/* User decision markers */}
           {data.filter((d) => d.userAction).map((d, i) => (
@@ -112,10 +113,10 @@ export default function ProReplayChart({ priceHistory, userDecisions, proDecisio
               key={`user-${i}`}
               x={d.time}
               y={d.price}
-              r={7}
-              fill={d.userAction?.toLowerCase().includes('sell') ? '#f87171' : '#4ade80'}
-              stroke="#F1EDE2"
-              strokeWidth={2}
+              r={8}
+              fill={d.userAction?.toLowerCase().includes('sell') ? '#ef4444' : '#22c55e'}
+              stroke="white"
+              strokeWidth={2.5}
             />
           ))}
           {/* Pro decision markers */}
@@ -124,9 +125,9 @@ export default function ProReplayChart({ priceHistory, userDecisions, proDecisio
               key={`pro-${i}`}
               x={d.time}
               y={d.price}
-              r={5}
-              fill="#22d3ee"
-              stroke="#F1EDE2"
+              r={6}
+              fill="#06b6d4"
+              stroke="white"
               strokeWidth={2}
             />
           ))}
@@ -134,21 +135,21 @@ export default function ProReplayChart({ priceHistory, userDecisions, proDecisio
       </ResponsiveContainer>
 
       {/* Legend */}
-      <div className="flex items-center justify-center gap-6 mt-2 text-xs text-brand-navy/60">
-        <div className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full bg-green-500 inline-block" />
+      <div className="flex items-center justify-center gap-6 mt-3 pt-3 border-t border-gray-200">
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-500">
+          <span className="w-3.5 h-3.5 rounded-full bg-green-500 inline-block shadow-sm" />
           <span>Your Buy</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full bg-red-500 inline-block" />
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-500">
+          <span className="w-3.5 h-3.5 rounded-full bg-red-500 inline-block shadow-sm" />
           <span>Your Sell</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full bg-cyan-500 inline-block" />
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-500">
+          <span className="w-3.5 h-3.5 rounded-full bg-cyan-500 inline-block shadow-sm" />
           <span>Pro Move</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-5 h-0.5 bg-brand-blue inline-block" />
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-500">
+          <span className="w-6 h-0.5 bg-gray-400 inline-block rounded-full" />
           <span>Price</span>
         </div>
       </div>

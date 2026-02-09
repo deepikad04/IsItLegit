@@ -35,35 +35,40 @@ export default function BiasHeatmap({ data }) {
   const biasTypes = Object.keys(BIAS_LABELS);
 
   return (
-    <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-6 border border-brand-blue/30 shadow-sm">
+    <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-md">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-bold text-brand-navy">Bias Heatmap Timeline</h3>
-        <div className="flex items-center gap-4 text-sm">
-          <span className="text-brand-navy/60">
-            Peak bias at <span className="text-red-500 font-semibold">t={peak_bias_moment}s</span>
+        <h3 className="text-lg font-bold text-brand-navy flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center">
+            <span className="text-sm">🔥</span>
+          </div>
+          Bias Heatmap Timeline
+        </h3>
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-red-100 text-red-700">
+            Peak at t={peak_bias_moment}s
           </span>
-          <span className="text-brand-navy/60">
-            Dominant: <span className="text-yellow-600 font-semibold">{BIAS_LABELS[dominant_bias] || dominant_bias}</span>
+          <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 capitalize">
+            {BIAS_LABELS[dominant_bias] || dominant_bias}
           </span>
         </div>
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-4 mb-4 text-xs text-brand-navy/60">
-        <div className="flex items-center gap-1">
-          <div className="w-3 h-3 rounded bg-brand-blue/20 opacity-20" />
+      <div className="flex items-center gap-5 mb-4 text-xs font-semibold text-brand-navy/50">
+        <div className="flex items-center gap-1.5">
+          <div className="w-4 h-4 rounded-md bg-gray-100 border border-gray-200" />
           <span>None</span>
         </div>
-        <div className="flex items-center gap-1">
-          <div className="w-3 h-3 rounded bg-green-500 opacity-60" />
+        <div className="flex items-center gap-1.5">
+          <div className="w-4 h-4 rounded-md bg-green-400" />
           <span>Low</span>
         </div>
-        <div className="flex items-center gap-1">
-          <div className="w-3 h-3 rounded bg-yellow-500 opacity-80" />
+        <div className="flex items-center gap-1.5">
+          <div className="w-4 h-4 rounded-md bg-yellow-400" />
           <span>Medium</span>
         </div>
-        <div className="flex items-center gap-1">
-          <div className="w-3 h-3 rounded bg-red-500" />
+        <div className="flex items-center gap-1.5">
+          <div className="w-4 h-4 rounded-md bg-red-500" />
           <span>High</span>
         </div>
       </div>
@@ -95,10 +100,10 @@ export default function BiasHeatmap({ data }) {
                       <button
                         onClick={() => setSelectedCell(isSelected ? null : { bias, index: i, entry })}
                         className={clsx(
-                          'w-full h-8 rounded cursor-pointer transition-all',
+                          'w-full h-8 rounded-md cursor-pointer transition-all duration-200 hover:scale-110 hover:shadow-md',
                           intensityColor(value),
                           intensityOpacity(value),
-                          isSelected && 'ring-2 ring-brand-navy'
+                          isSelected && 'ring-2 ring-brand-navy ring-offset-1'
                         )}
                         title={`${BIAS_LABELS[bias]}: ${(value * 100).toFixed(0)}%`}
                       />
@@ -129,15 +134,15 @@ export default function BiasHeatmap({ data }) {
 
       {/* Selected cell detail */}
       {selectedCell && (
-        <div className="mt-4 p-3 bg-brand-lavender/40 rounded-lg text-sm">
-          <div className="text-brand-navy/70">
-            <span className="text-brand-navy font-semibold">Decision #{selectedCell.entry.decision_index + 1}</span>
-            {' '}at t={selectedCell.entry.timestamp_seconds}s —{' '}
-            <span className="text-amber-600">{BIAS_LABELS[selectedCell.bias]}</span>
-            {': '}
-            {((selectedCell.entry.biases[selectedCell.bias] || 0) * 100).toFixed(0)}%
+        <div className="mt-4 p-4 bg-gradient-to-r from-brand-lavender/30 to-brand-cream rounded-xl border border-brand-blue/20 text-sm animate-fadeIn">
+          <div className="flex items-center gap-3 mb-2">
+            <span className="text-brand-navy font-bold">Decision #{selectedCell.entry.decision_index + 1}</span>
+            <span className="text-xs text-brand-navy/50 font-mono">t={selectedCell.entry.timestamp_seconds}s</span>
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+              {BIAS_LABELS[selectedCell.bias]}: {((selectedCell.entry.biases[selectedCell.bias] || 0) * 100).toFixed(0)}%
+            </span>
           </div>
-          <p className="text-brand-navy/60 mt-1">{selectedCell.entry.evidence}</p>
+          <p className="text-brand-navy/60">{selectedCell.entry.evidence}</p>
         </div>
       )}
     </div>

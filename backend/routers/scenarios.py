@@ -60,7 +60,11 @@ async def list_scenarios(
     # Ensure scenarios are loaded
     load_scenarios_from_json(db)
 
-    query = db.query(Scenario).filter(Scenario.is_active == 1)
+    query = db.query(Scenario).filter(
+        Scenario.is_active == 1,
+        # Only show built-in scenarios OR AI scenarios owned by this user
+        (Scenario.generated_for_user_id == None) | (Scenario.generated_for_user_id == current_user.id),  # noqa: E711
+    )
 
     if category:
         query = query.filter(Scenario.category == category)
@@ -77,7 +81,11 @@ async def list_unlocked_scenarios(
 ):
     """List scenarios with lock status based on user's progress."""
     load_scenarios_from_json(db)
-    scenarios = db.query(Scenario).filter(Scenario.is_active == 1).all()
+    scenarios = db.query(Scenario).filter(
+        Scenario.is_active == 1,
+        # Only show built-in scenarios (no owner) OR AI scenarios owned by this user
+        (Scenario.generated_for_user_id == None) | (Scenario.generated_for_user_id == current_user.id),  # noqa: E711
+    ).all()
 
     completed_sims = db.query(Simulation).filter(
         Simulation.user_id == current_user.id,
@@ -99,6 +107,9 @@ async def list_unlocked_scenarios(
             "unlock_requirements": s.unlock_requirements,
             "is_ai_generated": s.generated_for_user_id is not None,
         })
+
+    # Sort: unlocked first, then by difficulty ascending
+    result.sort(key=lambda x: (x["is_locked"], x["difficulty"]))
     return result
 
 
@@ -187,6 +198,13 @@ async def get_scenario(
     scenario = db.query(Scenario).filter(Scenario.id == scenario_id).first()
 
     if not scenario:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Scenario not found"
+        )
+
+    # Block access to AI scenarios owned by other users
+    if scenario.generated_for_user_id and scenario.generated_for_user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Scenario not found"

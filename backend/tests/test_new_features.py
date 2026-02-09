@@ -265,7 +265,8 @@ class TestTimelineCache:
         """Second engine creation for same scenario uses cached timeline."""
         scenario = _make_scenario()
         engine1 = SimulationEngine(scenario)
-        cache_key = str(scenario.id)
+        # Cache key includes scenario ID and market_params hash
+        cache_key = f"{scenario.id}:{hash(str(engine1.market_params))}"
         assert cache_key in _timeline_cache
 
         engine2 = SimulationEngine(scenario)
@@ -278,8 +279,10 @@ class TestTimelineCache:
         s2 = _make_scenario("Scenario B")
         e1 = SimulationEngine(s1)
         e2 = SimulationEngine(s2)
-        assert str(s1.id) in _timeline_cache
-        assert str(s2.id) in _timeline_cache
+        key1 = f"{s1.id}:{hash(str(e1.market_params))}"
+        key2 = f"{s2.id}:{hash(str(e2.market_params))}"
+        assert key1 in _timeline_cache
+        assert key2 in _timeline_cache
         assert e1.price_timeline is not e2.price_timeline
 
 

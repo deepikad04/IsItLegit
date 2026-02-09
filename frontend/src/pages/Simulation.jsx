@@ -383,6 +383,7 @@ export default function Simulation() {
       setStopPrice('');
     } catch (err) {
       console.error('Failed to make decision:', err);
+      showToast('halted', err.response?.data?.detail || 'Decision failed — try again');
     }
   };
 
@@ -428,7 +429,13 @@ export default function Simulation() {
         rationale: rationale.trim(),
       });
       setChallengeResult({ ...res.data, decisionType });
-    } catch (err) { console.error('Challenge failed:', err);
+    } catch (err) {
+      console.error('Challenge failed:', err);
+      setChallengeResult({
+        reasoning_score: 0,
+        feedback: 'AI analysis is temporarily unavailable. You can still proceed with your decision.',
+        decisionType,
+      });
     } finally { setChallenging(false); }
   };
 
@@ -479,10 +486,22 @@ export default function Simulation() {
     return (
       <div className="min-h-screen bg-brand-cream flex items-center justify-center px-4">
         <div className="card max-w-md text-center">
-          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-gray-900 mb-2">Error</h2>
-          <p className="text-gray-600 mb-4">{error}</p>
-          <button onClick={() => navigate('/dashboard')} className="btn btn-primary">Return to Dashboard</button>
+          <div className="w-16 h-16 rounded-2xl bg-red-100 flex items-center justify-center mx-auto mb-4">
+            <AlertCircle className="h-8 w-8 text-red-600" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Unable to Load</h2>
+          <p className="text-gray-500 mb-6 text-sm">{error}</p>
+          <div className="flex justify-center gap-3">
+            <button
+              onClick={() => { setError(null); setLoading(true); loadScenario(); }}
+              className="btn btn-secondary"
+            >
+              Try Again
+            </button>
+            <button onClick={() => navigate('/dashboard')} className="btn btn-primary">
+              Return to Dashboard
+            </button>
+          </div>
         </div>
       </div>
     );

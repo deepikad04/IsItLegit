@@ -16,6 +16,8 @@ import {
   BookOpen,
   ArrowUpRight,
   Sparkles,
+  Filter,
+  X,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -27,6 +29,8 @@ export default function Dashboard() {
   const [profileSummary, setProfileSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [generatingChallenge, setGeneratingChallenge] = useState(false);
+  const [filterCategory, setFilterCategory] = useState('all');
+  const [filterDifficulty, setFilterDifficulty] = useState('all');
 
   useEffect(() => {
     loadData();
@@ -99,6 +103,15 @@ export default function Dashboard() {
     return icons[category] || Target;
   };
 
+  const CATEGORY_LABELS = {
+    fomo_trap: 'FOMO Trap',
+    patience_test: 'Patience Test',
+    loss_aversion: 'Loss Aversion',
+    social_proof: 'Social Proof',
+    risk_management: 'Risk Management',
+    contrarian: 'Contrarian',
+  };
+
   const formatUnlockRequirements = (reqs) => {
     if (!reqs) return '';
     const parts = [];
@@ -106,6 +119,21 @@ export default function Dashboard() {
     if (reqs.min_process_score) parts.push(`${reqs.min_process_score}% avg process score`);
     return parts.join(' + ');
   };
+
+  // Derive unique categories from loaded scenarios
+  const categories = [...new Set(scenarios.map((s) => s.category))].sort();
+
+  // Filter and sort: unlocked first, then by difficulty ascending
+  const filteredScenarios = scenarios
+    .filter((s) => filterCategory === 'all' || s.category === filterCategory)
+    .filter((s) => filterDifficulty === 'all' || s.difficulty === Number(filterDifficulty))
+    .sort((a, b) => {
+      if (a.is_locked !== b.is_locked) return a.is_locked ? 1 : -1;
+      return a.difficulty - b.difficulty;
+    });
+
+  const hasActiveFilters = filterCategory !== 'all' || filterDifficulty !== 'all';
+  const clearFilters = () => { setFilterCategory('all'); setFilterDifficulty('all'); };
 
   if (loading) {
     return (
@@ -218,12 +246,41 @@ export default function Dashboard() {
 
       {/* Scenarios Section */}
       <div>
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
           <h2 className="text-xl font-semibold text-brand-navy">Available Scenarios</h2>
-          <span className="text-sm text-brand-navy/50">{scenarios.length} scenarios</span>
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Category filter */}
+            <select
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="text-sm border border-brand-blue/20 rounded-lg px-3 py-1.5 bg-white text-brand-navy focus:outline-none focus:ring-2 focus:ring-brand-navy/20"
+            >
+              <option value="all">All Categories</option>
+              {categories.map((cat) => (
+                <option key={cat} value={cat}>{CATEGORY_LABELS[cat] || cat}</option>
+              ))}
+            </select>
+            {/* Difficulty filter */}
+            <select
+              value={filterDifficulty}
+              onChange={(e) => setFilterDifficulty(e.target.value)}
+              className="text-sm border border-brand-blue/20 rounded-lg px-3 py-1.5 bg-white text-brand-navy focus:outline-none focus:ring-2 focus:ring-brand-navy/20"
+            >
+              <option value="all">All Levels</option>
+              {[1, 2, 3, 4, 5].map((d) => (
+                <option key={d} value={d}>Level {d}</option>
+              ))}
+            </select>
+            {hasActiveFilters && (
+              <button onClick={clearFilters} className="text-sm text-brand-navy/50 hover:text-red-500 flex items-center gap-1 transition-colors">
+                <X className="h-3.5 w-3.5" /> Clear
+              </button>
+            )}
+            <span className="text-sm text-brand-navy/50 ml-1">{filteredScenarios.length} of {scenarios.length}</span>
+          </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {scenarios.map((scenario, i) => {
+          {filteredScenarios.map((scenario, i) => {
             const CategoryIcon = getCategoryIcon(scenario.category);
             const isLocked = scenario.is_locked;
             return (

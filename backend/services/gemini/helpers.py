@@ -70,6 +70,7 @@ THINKING_BUDGETS = {
     "bias_classifier": 2048,
     "confidence_calibration": 2048,
     "behavior_history": 4096,
+    "chart_analysis": 1024,
 }
 
 # Legacy name kept for backward compat (maps budget to level label for logging)

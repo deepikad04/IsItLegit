@@ -711,3 +711,72 @@ class TestConfigSettings:
         s = get_settings()
         assert hasattr(s, "gemini_enable_url_context")
         assert s.gemini_enable_url_context is True
+
+
+# ── Chart Analysis (Multimodal Vision) ─────────────────────────────
+
+
+class TestChartAnalysis:
+    """Tests for the multimodal chart analysis feature."""
+
+    def test_heuristic_fallback_returns_valid_schema(self):
+        """Heuristic fallback should return schema-compliant data."""
+        from services.gemini.schemas import _ChartAnalysisGeminiOutput
+
+        svc = GeminiService()
+        result = svc._heuristic_chart_analysis()
+
+        assert result["chart_type"] == "unknown"
+        assert result["recommended_action"] == "wait"
+        assert result["confidence"] == 0.0
+        assert len(result["bias_warnings"]) >= 2
+        assert result["_source"] == "heuristic"
+
+        # Validate bias warning structure
+        for w in result["bias_warnings"]:
+            assert "bias" in w
+            assert "explanation" in w
+            assert w["risk_level"] in ("low", "medium", "high")
+
+    def test_heuristic_fallback_schema_validation(self):
+        """Heuristic output should pass Pydantic schema validation."""
+        from services.gemini.schemas import _ChartAnalysisGeminiOutput
+
+        svc = GeminiService()
+        result = svc._heuristic_chart_analysis()
+
+        # Remove non-schema fields
+        clean = {k: v for k, v in result.items() if not k.startswith("_")}
+        validated = _ChartAnalysisGeminiOutput.model_validate(clean)
+        assert validated.chart_type == "unknown"
+        assert validated.confidence == 0.0
+
+    @pytest.mark.asyncio
+    async def test_mock_mode_uses_heuristic(self):
+        """When USE_MOCK_GEMINI=true, should return heuristic result."""
+        svc = GeminiService()
+        svc.use_mock = True
+
+        result = await svc.analyze_chart(b"fake_image_bytes", "image/png")
+        assert result["_source"] == "heuristic"
+        assert result["chart_type"] == "unknown"
+        assert len(result["bias_warnings"]) >= 2
+
+    def test_chart_analysis_thinking_budget_exists(self):
+        """Chart analysis should have a thinking budget configured."""
+        from services.gemini.helpers import THINKING_BUDGETS
+        assert "chart_analysis" in THINKING_BUDGETS
+        assert THINKING_BUDGETS["chart_analysis"] > 0
+
+    def test_chart_analysis_schema_fields(self):
+        """Schema should have all required fields."""
+        from services.gemini.schemas import _ChartAnalysisGeminiOutput
+
+        fields = _ChartAnalysisGeminiOutput.model_fields
+        expected = [
+            "chart_type", "trend_summary", "key_patterns",
+            "support_resistance", "bias_warnings",
+            "recommended_action", "confidence", "reasoning",
+        ]
+        for field in expected:
+            assert field in fields, f"Missing field: {field}"

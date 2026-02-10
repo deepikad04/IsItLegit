@@ -64,6 +64,7 @@ from services.gemini.schemas import (
     _BiasClassifierGeminiOutput,
     _ConfidenceCalibrationGeminiOutput,
     _BehaviorHistoryGeminiOutput,
+    _ChartAnalysisGeminiOutput,
 )
 
 class GeminiService:
@@ -3791,4 +3792,101 @@ Return valid JSON:
             ],
         }
 
+    # ── Chart Analysis (multimodal vision) ─────────────────────────────
+
+    async def analyze_chart(self, image_bytes: bytes, mime_type: str) -> dict:
+        """
+        Use Gemini multimodal vision to analyze a trading chart image.
+        Identifies patterns, trends, and cognitive bias risks.
+        """
+        if self.use_mock or not self.client or self._is_quota_exhausted:
+            return self._heuristic_chart_analysis()
+
+        prompt_text = """<role>
+You are a behavioral finance expert analyzing a trading chart screenshot.
+</role>
+
+<task>
+Analyze this chart image and identify:
+1. Chart type (candlestick, line, bar, etc.)
+2. Overall trend (bullish, bearish, sideways)
+3. Key technical patterns visible (head and shoulders, double top, flags, etc.)
+4. Approximate support and resistance levels
+5. Cognitive bias risks — what biases might a retail trader fall into looking at this chart?
+6. What action a disciplined trader should consider
+
+Focus especially on the BIAS WARNINGS — this is a decision training tool.
+</task>
+
+<output_format>
+Return valid JSON:
+{{
+  "chart_type": "candlestick" | "line" | "bar" | "unknown",
+  "trend_summary": "1-2 sentence description of the trend",
+  "key_patterns": ["pattern1", "pattern2"],
+  "support_resistance": ["$X support", "$Y resistance"],
+  "bias_warnings": [
+    {{
+      "bias": "anchoring" | "recency_bias" | "confirmation_bias" | "fomo" | "loss_aversion" | "overconfidence",
+      "explanation": "How this chart might trigger this bias",
+      "risk_level": "low" | "medium" | "high"
+    }}
+  ],
+  "recommended_action": "buy" | "sell" | "hold" | "wait",
+  "confidence": 0.0-1.0,
+  "reasoning": "2-3 sentence explanation of the analysis"
+}}
+</output_format>
+
+<constraints>
+- Always include at least 2 bias warnings — traders are prone to bias on ANY chart.
+- Be specific about what in the chart triggers each bias.
+- Confidence should reflect how clear the pattern is (0.5 = ambiguous, 0.9 = very clear).
+</constraints>"""
+
+        try:
+            image_part = genai_types.Part.from_bytes(
+                data=image_bytes,
+                mime_type=mime_type,
+            )
+            contents = [image_part, prompt_text]
+
+            data = await self._call_gemini(
+                contents, _ChartAnalysisGeminiOutput, None,
+                call_type="reflection",
+            )
+            return data
+        except Exception as e:
+            logger.warning("Chart analysis failed: %s", e)
+            return self._heuristic_chart_analysis()
+
+    def _heuristic_chart_analysis(self) -> dict:
+        """Deterministic fallback when Gemini is unavailable."""
+        return {
+            "chart_type": "unknown",
+            "trend_summary": "Unable to analyze chart with AI — showing general guidance.",
+            "key_patterns": ["Trend analysis requires AI vision"],
+            "support_resistance": [],
+            "bias_warnings": [
+                {
+                    "bias": "recency_bias",
+                    "explanation": "Traders tend to overweight recent price action and assume it will continue.",
+                    "risk_level": "high",
+                },
+                {
+                    "bias": "anchoring",
+                    "explanation": "You may anchor to the current price as 'normal' without considering the full range.",
+                    "risk_level": "medium",
+                },
+                {
+                    "bias": "confirmation_bias",
+                    "explanation": "You may focus on patterns that confirm your existing view and ignore contradictory signals.",
+                    "risk_level": "medium",
+                },
+            ],
+            "recommended_action": "wait",
+            "confidence": 0.0,
+            "reasoning": "Heuristic fallback — upload a chart when Gemini AI is available for full multimodal analysis.",
+            "_source": "heuristic",
+        }
 

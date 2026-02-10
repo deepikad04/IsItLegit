@@ -90,6 +90,13 @@ export const reflectionApi = {
   getBiasClassifier: (simulationId) => api.get(`/reflection/${simulationId}/bias-classifier`),
   getConfidenceCalibration: (simulationId) => api.get(`/reflection/${simulationId}/confidence-calibration`),
   getAiMetadata: (simulationId) => api.get(`/reflection/${simulationId}/ai-metadata`),
+  analyzeChart: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/reflection/chart-analysis', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
 };
 
 export const learningApi = {

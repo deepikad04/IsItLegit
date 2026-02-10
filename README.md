@@ -9,7 +9,7 @@ Built with React, FastAPI, PostgreSQL, and Google Gemini.
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green)
 ![Gemini](https://img.shields.io/badge/Google%20Gemini-AI-orange)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
-![Tests](https://img.shields.io/badge/Tests-167%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-172%20passing-brightgreen)
 
 ---
 
@@ -251,18 +251,19 @@ graph TB
 
 ## Gemini API Features Used
 
-This project uses **6 distinct Gemini API capabilities** — not just chat completions:
+This project uses **7 distinct Gemini API capabilities** — not just chat completions:
 
 | Feature | How It's Used | Call Types |
 |---------|---------------|------------|
-| **Structured Output** | Every Gemini response is schema-validated via Pydantic before reaching clients. No raw text — all structured JSON. | All 15+ call types |
+| **Structured Output** | Every Gemini response is schema-validated via Pydantic before reaching clients. No raw text — all structured JSON. | All 19+ call types |
 | **Thinking** | Extended thinking enabled for all calls — Gemini uses internal reasoning before producing structured output | `include_thoughts=True` on all calls |
+| **Multimodal Vision** | Users upload trading chart screenshots — Gemini Vision analyzes patterns, trends, support/resistance levels, and warns about cognitive bias risks triggered by the chart | `analyze_chart()` |
 | **Context Caching** | Shared scenario+decision prefix cached across related calls (reflection, counterfactuals, coaching) to reduce token costs and latency | `_get_or_create_context_cache()` — 7 call types share cached prefix |
 | **Search Grounding** | `GoogleSearch` tool verifies claim credibility with real web data. Extracts `groundingChunks` (source URIs), `groundingSupports` (citation segments), `web_search_queries` | `verify_claim_credibility()` |
 | **URL Context** | `UrlContext` tool reads article URLs to generate custom scenarios from real financial news. Extracts `url_context_metadata` with retrieval statuses | `generate_scenario_from_url()` |
 | **Mock Fallbacks** | Every Gemini call has a deterministic heuristic fallback (`USE_MOCK_GEMINI=true`) so the app runs without an API key | All call types |
 
-### All 18+ Gemini Call Types
+### All 19+ Gemini Call Types
 
 | Endpoint | Call Type | What It Does |
 |----------|-----------|--------------|
@@ -284,6 +285,7 @@ This project uses **6 distinct Gemini API capabilities** — not just chat compl
 | GET /behavior-history | `behavior_history` | Longitudinal analysis of user's full simulation history |
 | Batch analysis | `batch` | Multi-simulation pattern analysis |
 | Isolation | `isolate` | Single-bias deep dive |
+| POST /chart-analysis | `chart_analysis` | **Multimodal vision** — analyzes uploaded chart screenshots for patterns and bias risks |
 
 ---
 
@@ -331,6 +333,7 @@ Gemini acts as the **reasoning layer** that discovers patterns from raw behavior
 - **AI-generated scenarios** — Gemini creates custom scenarios targeting your specific weaknesses
 - **Claim verification** — search grounding checks news credibility against real web sources
 - **URL-based scenarios** — paste a news article URL and Gemini creates a scenario from it
+- **Chart analysis (multimodal vision)** — upload any trading chart screenshot and Gemini Vision identifies patterns, trends, and cognitive bias risks
 
 ### Frontend
 - **Collapsible sidebar navigation** — desktop sidebar collapses to icon-only mode; mobile uses slide-down menu
@@ -457,7 +460,7 @@ IsItLegit/
 │   │   ├── bias_classifier.py      # Feature extraction for bias classification
 │   │   └── confidence_calibrator.py # Evidence signal gathering for calibration
 │   ├── data/                 # Scenario JSON templates and learning cards
-│   ├── tests/                # pytest suite (167 tests)
+│   ├── tests/                # pytest suite (172 tests)
 │   ├── seed_demo.py          # Seeds demo users with raw behavioral data
 │   └── seed_analysis.py      # Runs Gemini on seeded data, persists AI analysis to DB
 ├── frontend/
@@ -479,7 +482,15 @@ cd backend
 pytest
 ```
 
-167 tests covering schema validation, simulation engine determinism, Gemini advanced features, bias classifier, and confidence calibration.
+172 tests covering schema validation, simulation engine determinism, Gemini advanced features, bias classifier, and confidence calibration.
+
+---
+
+## Known Limitations
+
+- **Gemini free tier quota**: The live deployment uses the Gemini API free tier, which has a daily request limit. If quota is exhausted, the app automatically falls back to deterministic heuristic analysis (still functional, but less nuanced than AI-generated insights). Analysis quality returns to full once the quota resets.
+- **First analysis takes time**: The initial Gemini analysis for a completed simulation can take 15-30 seconds as 8+ structured calls run in sequence. Subsequent views are instant (results are persisted to DB). Background pre-computation runs on simulation completion to minimize wait times.
+- **Cold start on Render free tier**: The backend is hosted on Render's free tier, so the first request after inactivity may take ~30 seconds to cold-start the server.
 
 ---
 

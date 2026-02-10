@@ -21,6 +21,7 @@ import {
   Activity,
 } from 'lucide-react';
 import clsx from 'clsx';
+import ChartAnalysis from '../components/ChartAnalysis';
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -288,6 +289,9 @@ export default function Dashboard() {
           </div>
         );
       })()}
+
+      {/* Chart Analysis (Gemini Vision) */}
+      <ChartAnalysis />
 
       {/* Recent Simulations */}
       {recentSimulations.length > 0 && (

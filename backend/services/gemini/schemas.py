@@ -345,3 +345,22 @@ class _BehaviorHistoryGeminiOutput(BaseModel):
     stress_response_evidence: str
     improvement_recommendations: list[_ImprovementRec]
     history_analysis_reasoning: str
+
+
+# ── Chart analysis (multimodal vision) output ────────────────────────
+
+class _ChartBiasWarning(BaseModel):
+    bias: str
+    explanation: str
+    risk_level: str  # "low", "medium", "high"
+
+
+class _ChartAnalysisGeminiOutput(BaseModel):
+    chart_type: str  # "candlestick", "line", "bar", "unknown"
+    trend_summary: str
+    key_patterns: list[str]
+    support_resistance: list[str]
+    bias_warnings: list[_ChartBiasWarning]
+    recommended_action: str  # "buy", "sell", "hold", "wait"
+    confidence: float = Field(ge=0, le=1)
+    reasoning: str

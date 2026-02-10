@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -676,4 +676,37 @@ async def counterfactual_isolation(
 
     data = result.model_dump(mode='json') if hasattr(result, 'model_dump') else result
     _set_cached(simulation, cache_key, data, db, gemini)
+    return result
+
+
+# ── Chart Analysis (Multimodal Vision) ─────────────────────────────
+
+ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
+
+
+@router.post("/chart-analysis", summary="Analyze a trading chart image with Gemini Vision")
+@limiter.limit("5/minute")
+async def analyze_chart(
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_user)],
+    file: UploadFile = File(...),
+):
+    """Upload a trading chart screenshot for AI-powered visual analysis.
+    Gemini Vision identifies patterns, trends, and cognitive bias risks."""
+    if file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported image type: {file.content_type}. Use PNG, JPEG, WebP, or GIF.",
+        )
+
+    image_bytes = await file.read()
+    if len(image_bytes) > MAX_IMAGE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Image too large. Maximum size is 10 MB.",
+        )
+
+    gemini = GeminiService()
+    result = await gemini.analyze_chart(image_bytes, file.content_type)
     return result

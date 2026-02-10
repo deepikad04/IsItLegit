@@ -5,18 +5,19 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 from cachetools import TTLCache
 
-from database import get_db
+from database import get_db, SessionLocal
 from models.user import User
 from models.scenario import Scenario
 from models.simulation import Simulation
 from models.decision import Decision
 from models.simulation_snapshot import SimulationSnapshot
+from models.behavior_profile import BehaviorProfile
 from routers.auth import get_current_user, limiter
 from services.simulation_engine import SimulationEngine
 from services.gemini_service import GeminiService
@@ -30,6 +31,99 @@ from schemas.simulation import (
 from schemas.decision import DecisionCreate, DecisionResponse
 
 router = APIRouter(prefix="/api/simulations", tags=["simulations"])
+
+import logging
+_logger = logging.getLogger(__name__)
+
+
+async def _precompute_analysis(simulation_id: str, user_id: str):
+    """Background task: run all Gemini analysis so Reflection page loads instantly."""
+    from sqlalchemy.orm.attributes import flag_modified
+
+    db = SessionLocal()
+    try:
+        simulation = db.query(Simulation).filter(Simulation.id == simulation_id).first()
+        if not simulation or simulation.status != "completed":
+            return
+
+        decisions = db.query(Decision).filter(
+            Decision.simulation_id == simulation_id
+        ).order_by(Decision.simulation_time).all()
+        scenario = simulation.scenario
+
+        profile = db.query(BehaviorProfile).filter(
+            BehaviorProfile.user_id == user_id
+        ).first()
+
+        gemini = GeminiService()
+
+        # 1) Batch analysis (reflection + counterfactuals) — the heaviest call
+        if not simulation.gemini_analysis:
+            try:
+                result = await gemini.batch_analyze(
+                    simulation=simulation,
+                    decisions=decisions,
+                    scenario=scenario,
+                    behavior_profile=profile.profile_data if profile else None,
+                )
+                analysis_data = result.get("reflection", {})
+                if isinstance(analysis_data, dict):
+                    analysis_data["_source"] = gemini.current_source
+                    if gemini._last_thinking:
+                        analysis_data["_thinking"] = gemini._last_thinking
+                simulation.gemini_analysis = analysis_data
+                simulation.counterfactuals = result.get("counterfactuals", [])
+                db.commit()
+                _logger.info("Pre-computed batch analysis for %s", simulation_id)
+            except Exception as e:
+                _logger.warning("Pre-compute batch failed for %s: %s", simulation_id, e)
+                db.rollback()
+
+        # Helper to persist a secondary analysis result
+        def _save(key, data):
+            import json
+            safe = json.loads(json.dumps(data, default=str))
+            safe["_source"] = gemini.current_source
+            if gemini._last_thinking:
+                safe["_thinking"] = gemini._last_thinking
+            if not simulation.gemini_cache:
+                simulation.gemini_cache = {}
+            simulation.gemini_cache[key] = safe
+            flag_modified(simulation, "gemini_cache")
+            db.commit()
+
+        # 2) Secondary analyses — run concurrently for speed
+        cache = simulation.gemini_cache or {}
+
+        async def _run(key, coro_fn):
+            if key in cache:
+                return
+            try:
+                result = await coro_fn()
+                data = result.model_dump(mode='json') if hasattr(result, 'model_dump') else (result if isinstance(result, dict) else {})
+                _save(key, data)
+                _logger.info("Pre-computed %s for %s", key, simulation_id)
+            except Exception as e:
+                _logger.warning("Pre-compute %s failed for %s: %s", key, simulation_id, e)
+                db.rollback()
+
+        await asyncio.gather(
+            _run("why", lambda: gemini.explain_decisions(simulation=simulation, decisions=decisions, scenario=scenario)),
+            _run("pro_comparison", lambda: gemini.compare_with_pro(simulation=simulation, decisions=decisions, scenario=scenario)),
+            _run("coaching", lambda: gemini.generate_coaching(simulation=simulation, decisions=decisions, scenario=scenario, behavior_profile=profile.profile_data if profile else None)),
+            _run("bias_heatmap", lambda: gemini.bias_heatmap(simulation=simulation, decisions=decisions, scenario=scenario)),
+            _run("rationale_review", lambda: gemini.rationale_review(simulation=simulation, decisions=decisions, scenario=scenario)),
+            _run("bias_classifier", lambda: gemini.bias_classifier(simulation=simulation, decisions=decisions, scenario=scenario)),
+            _run("confidence_calibration", lambda: gemini.confidence_calibration(simulation=simulation, decisions=decisions, scenario=scenario)),
+            return_exceptions=True,
+        )
+
+        _logger.info("All pre-computation done for simulation %s", simulation_id)
+
+    except Exception as e:
+        _logger.error("Pre-compute analysis error for %s: %s", simulation_id, e)
+    finally:
+        db.close()
 
 # ── Stream token cache: opaque token → {simulation_id, user_id, expires} ──
 _stream_tokens: TTLCache = TTLCache(maxsize=512, ttl=60)
@@ -345,6 +439,7 @@ async def skip_time(
 async def complete_simulation(
     simulation_id: UUID,
     complete_data: SimulationComplete,
+    background_tasks: BackgroundTasks,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db)
 ):
@@ -418,6 +513,10 @@ async def complete_simulation(
     current_user.last_simulation_date = datetime.utcnow()
 
     db.commit()
+
+    # Fire background pre-computation of all Gemini analysis
+    # so the Reflection page loads instantly when the user navigates there
+    asyncio.ensure_future(_precompute_analysis(str(simulation.id), str(current_user.id)))
 
     return SimulationOutcome(
         simulation_id=simulation.id,

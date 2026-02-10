@@ -43,34 +43,37 @@ _cache: TTLCache = TTLCache(maxsize=256, ttl=settings.gemini_cache_ttl_seconds)
 # ── Context cache store: maps simulation_id → Gemini cached_content name ─────
 _context_cache_store: dict[str, str] = {}
 
-# ── Thinking level presets per call type ──────────────────────────────────────
-# Gemini 3 Pro supports: "low" and "high" only (no medium/minimal).
-# Gemini 3 Flash also supports "minimal" and "medium".
-# We use Pro-compatible values since gemini_model defaults to gemini-3-pro.
-THINKING_LEVELS = {
-    # Live/real-time calls — minimize latency
-    "nudge": "low",
-    "challenge": "low",
-    # Post-sim analysis — low thinking for speed (Pro has no "medium")
-    "reflection": "low",
-    "why": "low",
-    "coaching": "low",
-    "bias_heatmap": "low",
-    "rationale_review": "low",
-    "profile_update": "low",
-    "playbook": "low",
-    "adherence": "low",
-    "learning_modules": "low",
+# ── Thinking budget presets per call type (token count) ────────────────────────
+# Controls how many tokens Gemini allocates for internal reasoning.
+# Higher budgets = deeper reasoning = more latency. Min for Pro = 128.
+# -1 = dynamic (model decides based on complexity).
+THINKING_BUDGETS = {
+    # Live/real-time calls — minimize latency (128 = minimum allowed)
+    "nudge": 128,
+    "challenge": 256,
+    # Post-sim analysis — moderate thinking for balanced quality/speed
+    "reflection": 1024,
+    "why": 512,
+    "coaching": 512,
+    "bias_heatmap": 512,
+    "rationale_review": 512,
+    "profile_update": 512,
+    "playbook": 512,
+    "adherence": 256,
+    "learning_modules": 512,
     # Deep analysis — maximum reasoning depth
-    "counterfactuals": "high",
-    "pro": "high",
-    "batch": "high",
-    "isolate": "high",
-    "adaptive_scenario": "high",
-    "bias_classifier": "high",
-    "confidence_calibration": "high",
-    "behavior_history": "high",
+    "counterfactuals": 4096,
+    "pro": 4096,
+    "batch": 8192,
+    "isolate": 4096,
+    "adaptive_scenario": 4096,
+    "bias_classifier": 2048,
+    "confidence_calibration": 2048,
+    "behavior_history": 4096,
 }
+
+# Legacy name kept for backward compat (maps budget to level label for logging)
+THINKING_LEVELS = {k: ("low" if v <= 512 else "high") for k, v in THINKING_BUDGETS.items()}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

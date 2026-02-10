@@ -17,6 +17,7 @@ from schemas.learning import (
     PersonalizedCards
 )
 from services.gemini_service import GeminiService
+from sqlalchemy.orm.attributes import flag_modified
 
 logger = logging.getLogger(__name__)
 
@@ -216,17 +217,36 @@ async def list_modules(
     ).first()
 
     if profile and profile.profile_data.get("weaknesses"):
-        # Try Gemini-generated personalized modules
-        try:
-            gemini = GeminiService()
-            generated = await gemini.generate_learning_modules(profile.profile_data)
-            if generated:
-                modules = generated
-            else:
+        # Check if we already have cached generated modules for this profile state
+        import hashlib, json as _json
+        weaknesses = profile.profile_data.get("weaknesses", [])
+        bias_patterns = profile.profile_data.get("bias_patterns", {})
+        cache_seed = _json.dumps(sorted(weaknesses) + sorted(f"{k}:{v:.1f}" for k, v in bias_patterns.items()))
+        cache_hash = hashlib.md5(cache_seed.encode()).hexdigest()[:12]
+
+        cached = profile.profile_data.get("_generated_modules", {})
+        if cached.get("_hash") == cache_hash and cached.get("modules"):
+            # DB cache hit — instant
+            modules = cached["modules"]
+        else:
+            # Generate with Gemini (or heuristic fallback)
+            try:
+                gemini = GeminiService()
+                generated = await gemini.generate_learning_modules(profile.profile_data)
+                if generated:
+                    modules = generated
+                    # Persist to DB so future loads are instant
+                    profile.profile_data["_generated_modules"] = {
+                        "_hash": cache_hash,
+                        "modules": modules,
+                    }
+                    flag_modified(profile, "profile_data")
+                    db.commit()
+                else:
+                    modules = get_learning_modules()
+            except Exception as e:
+                logger.warning("Gemini learning modules failed, using static: %s", e)
                 modules = get_learning_modules()
-        except Exception as e:
-            logger.warning("Gemini learning modules failed, using static: %s", e)
-            modules = get_learning_modules()
     else:
         modules = get_learning_modules()
 
@@ -261,20 +281,27 @@ async def get_module(
     if module:
         return module
 
-    # Check Gemini-generated modules (cached) for gen_ prefixed IDs
+    # Check DB-cached generated modules for gen_ prefixed IDs
     if module_id.startswith("gen_"):
         profile = db.query(BehaviorProfile).filter(
             BehaviorProfile.user_id == current_user.id
         ).first()
-        if profile and profile.profile_data.get("weaknesses"):
-            try:
-                gemini = GeminiService()
-                generated = await gemini.generate_learning_modules(profile.profile_data)
-                module = next((m for m in generated if m["id"] == module_id), None)
+        if profile:
+            cached = profile.profile_data.get("_generated_modules", {})
+            if cached.get("modules"):
+                module = next((m for m in cached["modules"] if m["id"] == module_id), None)
                 if module:
                     return module
-            except Exception:
-                pass
+            # Fallback: regenerate if not in cache
+            if profile.profile_data.get("weaknesses"):
+                try:
+                    gemini = GeminiService()
+                    generated = await gemini.generate_learning_modules(profile.profile_data)
+                    module = next((m for m in generated if m["id"] == module_id), None)
+                    if module:
+                        return module
+                except Exception:
+                    pass
 
     raise HTTPException(status_code=404, detail="Module not found")
 

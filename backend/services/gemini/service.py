@@ -34,6 +34,7 @@ from services.gemini.helpers import (
     _cache,
     _context_cache_store,
     THINKING_LEVELS,
+    THINKING_BUDGETS,
     _get_market_state,
     _decision_trace,
     _scenario_summary,
@@ -138,8 +139,9 @@ class GeminiService:
 
         last_error: Exception | None = None
 
-        # Determine thinking level from call type
-        thinking_level = THINKING_LEVELS.get(call_type, "medium")
+        # Determine thinking budget from call type
+        thinking_budget = THINKING_BUDGETS.get(call_type, 1024)
+        thinking_level = THINKING_LEVELS.get(call_type, "low")
 
         # Build tools list (e.g. Search grounding, URL context)
         tools = []
@@ -150,12 +152,13 @@ class GeminiService:
 
         for attempt in range(1, self.max_retries + 1):
             try:
-                # Build config
+                # Build config with per-call-type thinking budget
                 config_kwargs = {
                     "response_mime_type": "application/json",
                     "temperature": 1.0,  # Gemini 3: keep at 1.0 to avoid looping/degraded reasoning
                     "thinking_config": genai_types.ThinkingConfig(
                         include_thoughts=True,
+                        thinking_budget=thinking_budget,
                     ),
                 }
                 if tools:

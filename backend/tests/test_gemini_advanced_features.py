@@ -113,9 +113,9 @@ class TestThinkingLevels:
         assert THINKING_LEVELS["batch"] == "high"
         assert THINKING_LEVELS["isolate"] == "high"
 
-    def test_standard_analysis_uses_low_thinking(self):
-        """Post-sim calls use 'low' since Gemini 3 Pro has no 'medium'."""
-        assert THINKING_LEVELS["reflection"] == "low"
+    def test_standard_analysis_uses_expected_thinking(self):
+        """Post-sim calls use appropriate thinking levels based on budget."""
+        assert THINKING_LEVELS["reflection"] == "high"  # 1024 tokens — deeper reasoning
         assert THINKING_LEVELS["why"] == "low"
         assert THINKING_LEVELS["coaching"] == "low"
 
